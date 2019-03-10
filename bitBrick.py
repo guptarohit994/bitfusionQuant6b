@@ -1,15 +1,19 @@
 #!/usr/bin/python3
 # import array
-# import numpy as np
+import numpy as np
 
 class bitBrick():
     """ Class to implement a BitBrick """
     def __init__(self, name, inputs, ID):
         print("BitBrick.py<-__init__: inputs="+"self:"+str(self)+","+"name:"+str(name)+",")
         self.name = name
-        self.input_A = inputs[0]
-        self.input_B = inputs[1]
+        self.input_A = np.int8(inputs[0])
+        self.input_B = np.int8(inputs[1])
         self.ID = ID
+
+        assert abs(self.input_A) <= 3, 'bitBrick error - input greater than 2 bits'
+        assert abs(self.input_B) <= 3, 'bitBrick error - input greater than 2 bits'
+
 
     def displayAttributes(self):
         """ Function to print the attributes of an object of BitBrick class"""
@@ -27,6 +31,7 @@ class bitBrick():
     def printProduct_Latency(self):
         """ Returns the product and latency """
         print("BitBrick.py<-printProduct_Latency: inputs="+"self:"+str(self)+",")
+        '''
         if (self.input_A < 0):
             rightShiftA = self.input_A >> 3
             if (rightShiftA == -1):
@@ -42,11 +47,13 @@ class bitBrick():
             rightShiftB = self.input_B >> 3
 
         assert (not(rightShiftA) and not(rightShiftB)), 'Values are greater than 3 bits'
+        '''
         Product_Latency = self.computeProduct(self.input_A, self.input_B)
         return Product_Latency[0], Product_Latency[1]
 
-if __name__== "__main__":
-    BB0 = bitBrick('BB0', [-4, 2], "0_0_0")
+
+if __name__ == "__main__":
+    BB0 = bitBrick('BB0', [-2, 2], "0_0_0")
     print(BB0)
 
     BB0.displayAttributes()
