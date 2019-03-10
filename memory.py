@@ -3,7 +3,7 @@ from mem_handlers import *
 
 class memory(mem_handlers):
 
-    def __init__ (self, name, size=(16*1024)):
+    def __init__(self, name, size=(16*1024)):
         print("memory <- __init__: inputs=self:"+str(self))
         self.mem_name = name
         self.mem_size = size

@@ -28,5 +28,6 @@ class shiftAdd():
 
 
 
-SA0 = shiftAdd([0, 2, 2, 4], [2, 2, 4, 2])
-print(SA0.printFinalSum_Latency())
+if __name__ == '__main__':
+    SA0 = shiftAdd([0, 2, 2, 4], [2, 2, 4, 2])
+    print(SA0.printFinalSum_Latency())

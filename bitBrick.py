@@ -45,10 +45,11 @@ class bitBrick():
         Product_Latency = self.computeProduct(self.input_A, self.input_B)
         return Product_Latency[0], Product_Latency[1]
 
-BB0 = bitBrick('BB0', [-4, 2], "0_0_0")
-print(BB0)
+if __name__== "__main__":
+    BB0 = bitBrick('BB0', [-4, 2], "0_0_0")
+    print(BB0)
 
-BB0.displayAttributes()
+    BB0.displayAttributes()
 
-Prod_Latency = BB0.printProduct_Latency()
-print(Prod_Latency)
+    Prod_Latency = BB0.printProduct_Latency()
+    print(Prod_Latency)
