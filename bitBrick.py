@@ -1,62 +1,55 @@
 #!/usr/bin/python3
 # import array
 import numpy as np
+import constants as constants
 
 class bitBrick():
     """ Class to implement a BitBrick """
-    def __init__(self, name, inputs, ID):
+    def __init__(self, name):
         print("BitBrick.py<-__init__: inputs="+"self:"+str(self)+","+"name:"+str(name)+",")
         self.name = name
-        self.input_A = np.int8(inputs[0])
-        self.input_B = np.int8(inputs[1])
-        self.ID = ID
-
-        assert abs(self.input_A) <= 3, 'bitBrick error - input greater than 2 bits'
-        assert abs(self.input_B) <= 3, 'bitBrick error - input greater than 2 bits'
-
+        self.input_A = 0
+        self.input_B = 0
+        self.status = "free"
+        self.latency = constants.latency_bitbrick
+        self.product = 0
+        print("The name and value are {} and {}, {}".format(self.name,self.input_A, self.input_B))
 
     def displayAttributes(self):
         """ Function to print the attributes of an object of BitBrick class"""
         print("BitBrick.py<-displayAttributes: inputs="+"self:"+str(self)+",")
-        print("The name and the ID of the object is {}".format(self.name, self.ID))
+        print("The name of the object is {}".format(self.name))
         print("The inputs to the bitbrick are {} and {}".format(self.input_A, self.input_B))
 
-    def computeProduct(self, multiplier, multiplicand):
+    def computeProduct(self):
         """ Function returns the product computed after multiplication of multiplier and multiplicand"""
         print("BitBrick.py<-computeProduct: inputs="+"self:"+str(self)+",")
-        product = multiplier*multiplicand
-        returnVal = [product, 2.0]
-        return returnVal
+        product = self.input_A * self.input_B
+        self.product = product
 
-    def printProduct_Latency(self):
+    def assignInputs(self, input_A, input_B):
+        print("bitBrick.py<-assignInputs")
+        if self.status != "busy":
+            self.input_A = input_A
+            self.input_B = input_B
+            self.status = "busy"
+            assert abs(self.input_A) <= 3, 'bitBrick error - input greater than 2 bits'
+            assert abs(self.input_B) <= 3, 'bitBrick error - input greater than 2 bits'
+        return self.status
+
+    def getProductLatency(self):
         """ Returns the product and latency """
         print("BitBrick.py<-printProduct_Latency: inputs="+"self:"+str(self)+",")
-        '''
-        if (self.input_A < 0):
-            rightShiftA = self.input_A >> 3
-            if (rightShiftA == -1):
-                rightShiftA = 0
-        else:
-            rightShiftA = self.input_A >> 3
-        
-        if (self.input_B < 0):
-            rightShiftB = self.input_B >> 3
-            if (rightShiftB == -1):
-                rightShiftB = 0
-        else:
-            rightShiftB = self.input_B >> 3
-
-        assert (not(rightShiftA) and not(rightShiftB)), 'Values are greater than 3 bits'
-        '''
-        Product_Latency = self.computeProduct(self.input_A, self.input_B)
-        return Product_Latency[0], Product_Latency[1]
+        return self.product, self.latency
 
 
 if __name__ == "__main__":
-    BB0 = bitBrick('BB0', [-2, 2], "0_0_0")
+    BB0 = bitBrick('BB0')
+    BB0.assignInputs(-2, 2)
+    BB0.computeProduct()
     print(BB0)
 
     BB0.displayAttributes()
 
-    Prod_Latency = BB0.printProduct_Latency()
+    Prod_Latency = BB0.getProductLatency()
     print(Prod_Latency)
