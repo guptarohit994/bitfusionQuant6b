@@ -31,9 +31,9 @@ class mem_handlers():
             data.append(int.from_bytes(temp, byteorder='little'))
             access_byte_cnt += 1
         data = np.array(data, dtype=np.int8)
-        utils.cprint("mem_handlers", "read_mem", str(data))
+        #utils.cprint("mem_handlers", "read_mem", str(data))
         buf_fd.close()
-        return data
+        return data.tolist()
 
     # stores data as list from starting address addr of memory name
     def write_mem(self, name, addr, data):

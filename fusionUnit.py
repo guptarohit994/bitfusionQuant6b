@@ -2,73 +2,119 @@
 
 import bitBrick
 import shiftAdd
+import numpy as np
+import re
+from memory import *
+import utils as utils
 
-class fusionUnit(bitBrick.bitBrick, shiftAdd.shiftAdd):
+class fusionUnit(shiftAdd.shiftAdd):
     """Class for representing the fusionUnit"""
-    def __init__(self, name, input_pixel, weight, \
-            input_pixel_resolution, weight_resolution \
-            ID, BB_countX, BB_countY):
+    def __init__(self, name, wbuf_name, wbuf_obj, \
+                 ibuf_name, ibuf_obj, \
+                 obuf_name, obuf_obj, bit_width):
         """ Constructor class for the Fusion Unit """
+
         self.name = name
-        self.input_pixel = input_pixel
-        self.weight = weight
-        self.input_pixel_resolution = input_pixel_resolution
-        self.weight_resolution = weight_resolution
-        self.ID = ID
-        self.rows = BB_countY
-        self.cols = BB_countX
-        self.BB_list = [][] # Used to store the BB objects
+        # provide connected buf names
+        self.wBufName = wbuf_name
+        self.wBufObj = wbuf_obj
+        self.iBufName = ibuf_name
+        self.iBufObj = ibuf_obj
+        self.oBufName = obuf_name
+        self.oBufObj = obuf_obj
+        self.bitWidth = bit_width
+        self.commands = []
+        self.outputs = []
+        # TODO make these rows customizable for experiments
+        self.rows = 4
+        self.cols = 4
+        self.BB_list = [[0 for x in range(self.rows)] for y in range(self.cols)] # Used to store the BB objects
+
         for i in range(self.rows):
             for j in range(self.cols):
                 BB_name = "BB_"+str(i)+"_"+str(j)
                 self.BB_list[i][j] = bitBrick.bitBrick(BB_name)
 
-    def scheduleProduct(self, inputPixel, inputWeight):
-        # Compute the number of BBs required
-    
-    def computeBBreqd(self):
+    def addCommand(self, command):
+        if type(command) == list:
+            self.commands += command
+        else:
+            self.commands.append(command)
+
+    def parseCommand(self, command):
+        command_blocks = command.split(':')
+        assert len(command_blocks) == 2, 'fusionUnit - malformed command received'
+        pattern = re.compile('^BB_(\d+)_(\d+)$')
+        matches = pattern.match(command_blocks[0])
+        assert matches, 'fusionUnit - malformed target BB name received'
+
+        bb_command = command_blocks.pop(1).split()
+        assert len(bb_command) == 3, 'fusionUnit - malformed command for bitBrick received'
+        command_blocks.append(bb_command[0])
+        command_blocks.append(bb_command[1])
+        command_blocks.append(bb_command[2])
+        # return [<BB row num> <BB col num> <op> <memLoc of operand1> <memLoc of operand2>]
+        return [matches.group(1), matches.group(2)] + command_blocks[1:]
 
 
-    def getfreeBBCount(self):
-        count = 0
+    def sendCommand(self):
+        # TODO reduce buf accesses by making most of data read in case of
+        # following dict is to imitate mux distribution pattern of a buf access
+        # so, from single access, data can be divided into chunks depending on bitWidth
+        ibuf_data = {}
+        wbuf_data = {}
+
+        while len(self.commands) !=0:
+            command_blocks = self.parseCommand(self.commands.pop(0))
+            bb_row = int(command_blocks[0])
+            bb_col = int(command_blocks[1])
+            bb_op = command_blocks[2]
+
+            ibuf_byte = command_blocks[3].split('-') #of the form '0x400-2'
+            ibuf_bit_start = int(ibuf_byte[1])
+            ibuf_byte = int(ibuf_byte[0], 16) #of the form '0x400'
+
+            wbuf_byte = command_blocks[4].split('-') #of the form '0x400-2'
+            wbuf_bit_start = int(wbuf_byte[1])
+            wbuf_byte = int(wbuf_byte[0], 16) #of the form '0x400'
+
+            if ibuf_byte not in ibuf_data.keys():
+                ibuf_data[ibuf_byte] = self.iBufObj.load_mem(ibuf_byte, 1)[0]
+
+            if wbuf_byte not in wbuf_data.keys():
+                wbuf_data[wbuf_byte] = self.wBufObj.load_mem(wbuf_byte, 1)[0]
+
+            ibuf_operand = 0
+            if (ibuf_bit_start + self.bitWidth - 1) <= 8:
+                ibuf_operand = ((ibuf_data[ibuf_byte] << ibuf_bit_start) & 0xff) >> (8 - self.bitWidth)
+            else:
+                if (ibuf_byte + 1) not in ibuf_data.keys():
+                    ibuf_data[ibuf_byte+1] = self.iBufObj.load_mem(ibuf_byte+1, 1)[0]
+
+                ibuf_operand = ((ibuf_data[ibuf_byte]  << ibuf_bit_start) & 0xff) >> ibuf_bit_start
+                ibuf_operand = ibuf_operand << (self.bitWidth - 8 + ibuf_bit_start)
+                ibuf_operand = ibuf_operand | (ibuf_data[ibuf_byte+1] >> (8 - self.bitWidth + (8 - ibuf_bit_start)))
+
+            wbuf_operand = 0
+            if (wbuf_bit_start + self.bitWidth - 1) <= 8:
+                wbuf_operand = ((wbuf_data[wbuf_byte] << wbuf_bit_start) & 0xff) >> (8 - self.bitWidth)
+            else:
+                if (wbuf_byte + 1) not in wbuf_data.keys():
+                    wbuf_data[wbuf_byte+1] = self.wBufObj.load_mem(wbuf_byte+1, 1)[0]
+
+                wbuf_operand = ((wbuf_data[wbuf_byte]  << wbuf_bit_start) & 0xff) >> wbuf_bit_start
+                wbuf_operand = wbuf_operand << (self.bitWidth - 8 + wbuf_bit_start)
+                wbuf_operand = wbuf_operand | (wbuf_data[wbuf_byte+1] >> (8 - self.bitWidth + (8 - wbuf_bit_start)))
+
+            self.BB_list[bb_row][bb_col].addCommand(bb_op + " " + str(ibuf_operand) + " " + str(wbuf_operand))
+
+    # executes the commands in bitBrick and they are now placed in it's output
+    def execCommand(self):
         for i in range(self.rows):
             for j in range(self.cols):
-                if self.BB_list[i][j].status != "busy":
-                    count = count + 1
-        return count
+                if (self.BB_list[i][j].status == 'busy'):
+                    self.BB_list[i][j].execCommand()
 
-
-
-        # BBx is being initialized to 0
-        self.A0 = (self.input_pixel & 3)
-        self.A1 = (self.input_pixel & (3 << 2)) >> 2
-        self.A2 = (self.input_pixel & (3 << 4)) >> 4
-        self.A3 = (self.input_pixel & (3 << 6)) >> 6
-
-        self.B0 = (self.weight & 3)
-        self.B1 = (self.weight & (3 << 2)) >> 2
-        self.B2 = (self.weight & (3 << 4)) >> 4
-        self.B3 = (self.weight & (3 << 6)) >> 6
-        
-        # Computing these values
-        self.BB0  = bitBrick.bitBrick('BB0',[self.A0, self.B0], "0_0")
-        # super(fusionUnit, self).__init__('BB0', [self.A0, self.B0], "0_0")
-        self.BB1  = bitBrick.bitBrick('BB1',[self.A0, self.B1], "0_1")
-        self.BB2  = bitBrick.bitBrick('BB2',[self.A1, self.B0], "0_2")
-        self.BB3  = bitBrick.bitBrick('BB3',[self.A1, self.B1], "0_3")
-        self.BB4  = bitBrick.bitBrick('BB4',[self.A0, self.B2], "1_0")
-        self.BB5  = bitBrick.bitBrick('BB5',[self.A1, self.B2], "1_1")
-        self.BB6  = bitBrick.bitBrick('BB6',[self.A0, self.B3], "1_2")
-        self.BB7  = bitBrick.bitBrick('BB7',[self.A1, self.B3], "1_3")
-        self.BB8  = bitBrick.bitBrick('BB8',[self.A2, self.B0], "2_0")
-        self.BB9  = bitBrick.bitBrick('BB9',[self.A2, self.B1], "2_1")
-        self.BB10  = bitBrick.bitBrick('BB10',[self.A3, self.B0], "2_2")
-        self.BB11  = bitBrick.bitBrick('BB11',[self.A3, self.B1], "2_3")
-        self.BB12  = bitBrick.bitBrick('BB12',[self.A2, self.B2], "3_0")
-        self.BB13  = bitBrick.bitBrick('BB13',[self.A2, self.B3], "3_1")
-        self.BB14  = bitBrick.bitBrick('BB14',[self.A3, self.B2], "3_2")
-        self.BB15  = bitBrick.bitBrick('BB15',[self.A3, self.B3], "3_3")
-        #
     def displayAttributes(self):
         print("fusionUnit.py<-displayAttributes: inputs="+"self:"+str(self))
         print("The input pixel's value is {}".format(self.input_pixel))
@@ -76,14 +122,18 @@ class fusionUnit(bitBrick.bitBrick, shiftAdd.shiftAdd):
         print("The input pixel's resolution is {}".format(self.input_pixel_resolution))
         print("The input weight's resolution is {}".format(self.weight_resolution))
 
-    def computeProdLatency(self):
-        """Returns the final product and the latency of the operation"""
-        # Compute the intermediate products
-        self.product00 = self.BB0.printProduct
-        self.intermProd0 = shiftAdd([0,2,2,4],[self.BB0,self.BB1,self.BB2,self.BB3], 0)
-
-
 
 if __name__=="__main__":
-    FF0 = fusionUnit('FF0', 127, -1, 8, 8, "0_0")
-    FF0.computeProdLatency()
+    wbuf_obj = memory('wbuf0',1024)
+    wbuf_obj.store_mem(0x0, [0,1,2,3,4,5,6,7])
+
+    ibuf_obj = memory('ibuf0', 1024)
+    ibuf_obj.store_mem(0x0, [1,1,1,1,1,1,1,1])
+
+    obuf_obj = memory('obuf0', 1024)
+
+    FF0 = fusionUnit('FF0', 'wbuf0', wbuf_obj, 'ibuf0', ibuf_obj, 'obuf0', obuf_obj, 4)
+    FF0.addCommand(["BB_2_2:mul2 0x0-4 0x2-4", "BB_3_3:mul2 0x4-4 0x3-4"])
+    FF0.sendCommand()
+    FF0.execCommand()
+    #FF0.computeProdLatency()
