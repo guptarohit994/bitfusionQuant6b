@@ -7,11 +7,11 @@ import re
 from memory import *
 import utils as utils
 
-class fusionUnit(shiftAdd.shiftAdd):
+class fusionUnit():
     """Class for representing the fusionUnit"""
     def __init__(self, name, wbuf_name, wbuf_obj, \
                  ibuf_name, ibuf_obj, \
-                 obuf_name, obuf_obj, bit_width):
+                bit_width):
         """ Constructor class for the Fusion Unit """
 
         self.name = name
@@ -20,8 +20,8 @@ class fusionUnit(shiftAdd.shiftAdd):
         self.wBufObj = wbuf_obj
         self.iBufName = ibuf_name
         self.iBufObj = ibuf_obj
-        self.oBufName = obuf_name
-        self.oBufObj = obuf_obj
+        # self.oBufName = obuf_name
+        # self.oBufObj = obuf_obj
         self.bitWidth = bit_width
         self.commands = []
         self.outputs = []
@@ -29,11 +29,37 @@ class fusionUnit(shiftAdd.shiftAdd):
         self.rows = 4
         self.cols = 4
         self.BB_list = [[0 for x in range(self.rows)] for y in range(self.cols)] # Used to store the BB objects
+        # level 0 shiftAdd
+        self.shiftAddList = [[0 for x in range(int(self.rows/2))] for y in range(int(self.cols/2))]
+        # shiftAdd of 1st level which take input from other shiftAdd
+        self.shiftAddList_l1 = []
 
         for i in range(self.rows):
             for j in range(self.cols):
                 BB_name = "BB_"+str(i)+"_"+str(j)
                 self.BB_list[i][j] = bitBrick.bitBrick(BB_name)
+
+        # TODO make this automatic along with different levels
+        # assign input bitBricks for each shiftAdd
+        temp_row = 0
+        for i in range(int(self.rows/2)):
+            temp_col = 0
+
+            for j in range(int(self.cols/2)):
+                shiftAdd_name = "SA_"+str(i)+"_"+str(j)
+                input_bb_list = []
+                input_bb_list.append([self.BB_list[temp_row][temp_col], self.BB_list[temp_row][temp_col+1]])
+                input_bb_list.append([self.BB_list[temp_row+1][temp_col], self.BB_list[temp_row+1][temp_col+1]])
+
+                temp_col += 2
+                self.shiftAddList[i][j] = shiftAdd.shiftAdd(shiftAdd_name, input_bb_list, 0)
+            temp_row += 2
+
+        input_sa_list = []
+        input_sa_list.append([self.shiftAddList[0][0], self.shiftAddList[0][1]])
+        input_sa_list.append([self.shiftAddList[1][0], self.shiftAddList[1][1]])
+        self.shiftAddList_l1.append(shiftAdd.shiftAdd("SA_2_0", input_sa_list, 1))
+
 
     def addCommand(self, command):
         if type(command) == list:
@@ -41,6 +67,7 @@ class fusionUnit(shiftAdd.shiftAdd):
         else:
             self.commands.append(command)
 
+    # BB_0_1:mul2 A/N 0x400
     def parseCommand(self, command):
         command_blocks = command.split(':')
         assert len(command_blocks) == 2, 'fusionUnit - malformed command received'
@@ -115,6 +142,24 @@ class fusionUnit(shiftAdd.shiftAdd):
                 if (self.BB_list[i][j].status == 'busy'):
                     self.BB_list[i][j].execCommand()
 
+        # level 1 shiftAdd
+        for i in range(int(self.rows/2)):
+            for j in range(int(self.cols/2)):
+                self.shiftAddList[i][j].execShiftAdd()
+                self.shiftAddList[i][j].displayAttributes()
+
+        self.shiftAddList_l1[0].execShiftAdd()
+        self.shiftAddList_l1[0].displayAttributes()
+
+    def getBusyBitBricks(self):
+        for i in range(self.rows):
+            for j in range(self.cols):
+                if (self.BB_list[i][j].status == 'busy'):
+                    print("fusionUnit.py <- getBusyBitBricks of {} has {} busy with commands: {}".\
+                          format(self.name, self.BB_list[i][j].name, self.BB_list[i][j].commands))
+
+
+
     def displayAttributes(self):
         print("fusionUnit.py<-displayAttributes: inputs="+"self:"+str(self))
         print("The input pixel's value is {}".format(self.input_pixel))
@@ -125,15 +170,37 @@ class fusionUnit(shiftAdd.shiftAdd):
 
 if __name__=="__main__":
     wbuf_obj = memory('wbuf0',1024)
-    wbuf_obj.store_mem(0x0, [0,1,2,3,4,5,6,7])
+    wbuf_obj.store_mem(0x0, [165,1,2,3,4,5,6,7])
 
     ibuf_obj = memory('ibuf0', 1024)
-    ibuf_obj.store_mem(0x0, [1,1,1,1,1,1,1,1])
+    ibuf_obj.store_mem(0x0, [231,1,1,1,1,1,1,1])
 
-    obuf_obj = memory('obuf0', 1024)
+    #obuf_obj = memory('obuf0', 1024)
 
-    FF0 = fusionUnit('FF0', 'wbuf0', wbuf_obj, 'ibuf0', ibuf_obj, 'obuf0', obuf_obj, 4)
-    FF0.addCommand(["BB_2_2:mul2 0x0-4 0x2-4", "BB_3_3:mul2 0x4-4 0x3-4"])
+    FF0 = fusionUnit('FF0', 'wbuf0', wbuf_obj, 'ibuf0', ibuf_obj, 2)
+    # W = 165, I = 231, 231*165
+    commands = []
+    commands.append("BB_0_0:mul2 0x0-6 0x0-0")
+    commands.append("BB_0_1:mul2 0x0-6 0x0-2")
+    commands.append("BB_0_2:mul2 0x0-6 0x0-4")
+    commands.append("BB_0_3:mul2 0x0-6 0x0-6")
+    commands.append("BB_1_0:mul2 0x0-4 0x0-0")
+    commands.append("BB_1_1:mul2 0x0-4 0x0-2")
+    commands.append("BB_1_2:mul2 0x0-4 0x0-4")
+    commands.append("BB_1_3:mul2 0x0-4 0x0-6")
+    commands.append("BB_2_0:mul2 0x0-2 0x0-0")
+    commands.append("BB_2_1:mul2 0x0-2 0x0-2")
+    commands.append("BB_2_2:mul2 0x0-2 0x0-4")
+    commands.append("BB_2_3:mul2 0x0-2 0x0-6")
+    commands.append("BB_3_0:mul2 0x0-0 0x0-0")
+    commands.append("BB_3_1:mul2 0x0-0 0x0-2")
+    commands.append("BB_3_2:mul2 0x0-0 0x0-4")
+    commands.append("BB_3_3:mul2 0x0-0 0x0-6")
+    FF0.addCommand(commands)
+    #FF0.addCommand(["BB_2_2:mul2 0x0-0 0x2-4", "BB_3_3:mul2 0x4-4 0x3-4"])
     FF0.sendCommand()
-    FF0.execCommand()
+    FF0.getBusyBitBricks()
+    #FF0.execCommand()
+
+
     #FF0.computeProdLatency()

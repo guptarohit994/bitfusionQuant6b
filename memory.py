@@ -5,6 +5,7 @@ class memory(mem_handlers):
 
     def __init__(self, name, size=(16*1024)):
         print("memory <- __init__: inputs=self:"+str(self))
+        super(memory, self).__init__()
         self.mem_name = name
         self.mem_size = size
         self.create_mem(self.mem_name, self.mem_size)
@@ -41,6 +42,6 @@ if __name__ == '__main__':
     mem_obj2.store_mem(0x0,data)
     print(mem_obj2.load_mem(0x0,8))
 
-    os.remove("rohit")
-    os.remove("gupta")
+    os.remove(mem_obj.mem_dir+"rohit")
+    os.remove(mem_obj2.mem_dir+"gupta")
 

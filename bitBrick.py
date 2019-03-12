@@ -48,6 +48,7 @@ class bitBrick():
         print("bitBrick.py <- displayAttributes: The name of the bitBrick is: {}".format(self.name))
         print("bitBrick.py <- displayAttributes: It's commands list contains: {}".format(self.commands))
         print("bitBrick.py <- displayAttributes: It's output list contains: {}".format(self.outputs))
+        print("bitBrick.py <- displayAttributes: It's status: {}".format(self.status))
 
 
 if __name__ == "__main__":
