@@ -6,17 +6,17 @@ from bitBrickCommands import *
 
 class bitBrick():
     """ Class to implement a BitBrick """
-    def __init__(self, name):
-        print("BitBrick.py<-__init__: inputs="+"self:"+str(self)+","+"name:"+str(name)+",")
+    def __init__(self, name, fu_name):
+        print("BitBrick.py <- __init__ {}-{}".format(fu_name, name))
         self.name = name
+        self.fuName = fu_name
         self.status = "free"
         self.latency = constants.latency_bitBrick
         self.commands = []
         self.outputs = []
-        print("The name of bitBrick is {}".format(self.name))
 
     def addCommand(self, command):
-        print("bitBrick.py <- addCommand in "+self.name+" : inputs=command:"+str(command))
+        print("bitBrick.py <- addCommand {}-{}, command:{}".format(self.fuName, self.name, command))
         self.commands.append(command)
         self.status = 'busy'
 
@@ -34,7 +34,8 @@ class bitBrick():
     def execCommand(self):
         while (len(self.commands) != 0):
             current_command = self.commands.pop(0)
-            print("bitBrick.py <- execCommand in {}: Executing: {}".format(self.name, current_command))
+            print("bitBrick.py <- execCommand in {}-{}: Executing: {}".\
+                    format(self.fuName, self.name, current_command))
             command_blocks = self.parseCommand(current_command)
 
             if (command_blocks[0] == 'mul2'):
@@ -45,14 +46,12 @@ class bitBrick():
     def displayAttributes(self):
         """ Function to print the attributes of an object of BitBrick class"""
         # print("BitBrick.py <- displayAttributes: inputs="+"self:"+str(self)+",")
-        print("bitBrick.py <- displayAttributes: The name of the bitBrick is: {}".format(self.name))
-        print("bitBrick.py <- displayAttributes: It's commands list contains: {}".format(self.commands))
-        print("bitBrick.py <- displayAttributes: It's output list contains: {}".format(self.outputs))
-        print("bitBrick.py <- displayAttributes: It's status: {}".format(self.status))
+        print("bitBrick.py <- displayAttributes: {}-{}, status:{}, commands:{}, outputs:{}".\
+              format(self.fuName, self.name, self.status, self.commands, self.outputs))
 
 
 if __name__ == "__main__":
-    BB0 = bitBrick('BB0')
+    BB0 = bitBrick('BB0', 'FF0')
     BB0.addCommand("mul2 2 -2")
     BB0.addCommand("mul2 1  3")
     BB0.addCommand("mul2 3 3")

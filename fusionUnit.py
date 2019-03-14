@@ -37,7 +37,7 @@ class fusionUnit():
         for i in range(self.rows):
             for j in range(self.cols):
                 BB_name = "BB_"+str(i)+"_"+str(j)
-                self.BB_list[i][j] = bitBrick.bitBrick(BB_name)
+                self.BB_list[i][j] = bitBrick.bitBrick(BB_name, self.name)
 
         # TODO make this automatic along with different levels
         # assign input bitBricks for each shiftAdd
@@ -52,13 +52,13 @@ class fusionUnit():
                 input_bb_list.append([self.BB_list[temp_row+1][temp_col], self.BB_list[temp_row+1][temp_col+1]])
 
                 temp_col += 2
-                self.shiftAddList[i][j] = shiftAdd.shiftAdd(shiftAdd_name, input_bb_list, 0)
+                self.shiftAddList[i][j] = shiftAdd.shiftAdd(shiftAdd_name, input_bb_list, self.name, 0)
             temp_row += 2
 
         input_sa_list = []
         input_sa_list.append([self.shiftAddList[0][0], self.shiftAddList[0][1]])
         input_sa_list.append([self.shiftAddList[1][0], self.shiftAddList[1][1]])
-        self.shiftAddList_l1.append(shiftAdd.shiftAdd("SA_2_0", input_sa_list, 1))
+        self.shiftAddList_l1.append(shiftAdd.shiftAdd("SA_2_0", input_sa_list, self.name, 1))
 
 
     def addCommand(self, command):
@@ -196,11 +196,27 @@ if __name__=="__main__":
     commands.append("BB_3_1:mul2 0x0-0 0x0-2")
     commands.append("BB_3_2:mul2 0x0-0 0x0-4")
     commands.append("BB_3_3:mul2 0x0-0 0x0-6")
+    commands.append("BB_0_0:mul2 0x0-6 0x0-0")
+    commands.append("BB_0_1:mul2 0x0-6 0x0-2")
+    commands.append("BB_0_2:mul2 0x0-6 0x0-4")
+    commands.append("BB_0_3:mul2 0x0-6 0x0-6")
+    commands.append("BB_1_0:mul2 0x0-4 0x0-0")
+    commands.append("BB_1_1:mul2 0x0-4 0x0-2")
+    commands.append("BB_1_2:mul2 0x0-4 0x0-4")
+    commands.append("BB_1_3:mul2 0x0-4 0x0-6")
+    commands.append("BB_2_0:mul2 0x0-2 0x0-0")
+    commands.append("BB_2_1:mul2 0x0-2 0x0-2")
+    commands.append("BB_2_2:mul2 0x0-2 0x0-4")
+    commands.append("BB_2_3:mul2 0x0-2 0x0-6")
+    commands.append("BB_3_0:mul2 0x0-0 0x0-0")
+    commands.append("BB_3_1:mul2 0x0-0 0x0-2")
+    commands.append("BB_3_2:mul2 0x0-0 0x0-4")
+    commands.append("BB_3_3:mul2 0x0-0 0x0-6")
     FF0.addCommand(commands)
     #FF0.addCommand(["BB_2_2:mul2 0x0-0 0x2-4", "BB_3_3:mul2 0x4-4 0x3-4"])
     FF0.sendCommand()
     FF0.getBusyBitBricks()
-    #FF0.execCommand()
+    FF0.execCommand()
 
 
     #FF0.computeProdLatency()
