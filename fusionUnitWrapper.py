@@ -11,7 +11,10 @@ class fusionUnitWrapper():
         self.fuCols = 16
 
         self.fuData = {}
-        self.obuf_list = []
+        # stores obj of obuf of a column
+        self.obuf_obj = []
+        # which addr to store the output of level2 add in obuf
+        self.obuf_write_addr = []
         self.commands = []
         # stores objs of fu in a column
         self.col_fu_obj = [[0 for x in range(self.fuRows)] for y in range(self.fuCols)]
@@ -45,20 +48,37 @@ class fusionUnitWrapper():
 
             obuf_name = 'OBUF_x_'+str(j)
             obuf_obj = memory(obuf_name, 1024)
-            self.obuf_list.append(obuf_obj)
+            self.obuf_obj.append(obuf_obj)
+            self.obuf_write_addr.append(-1)
 
     # FU_0_1:BB_0_1:mul2 0x400-0 0x420-0
+    # staddr obuf_x_0 0x400
     def parseCommand(self, command):
         print(command)
-        command_blocks = command.split(':')
-        assert len(command_blocks) == 3, 'fusionUnitWrapper - malformed command received'
-        command_blocks[1] += ":"+command_blocks.pop(2)
-        pattern = re.compile('^FU_(\d+)_(\d+)$')
-        matches = pattern.match(command_blocks[0])
-        assert matches, 'fusionUnitWrapper - malformed target FF name received'
+        command_type = ""
+        if re.match('^#', command) is not None:
+            command_type = 'comment'
+            return [command_type]
+        elif "staddr OBUF_x_" in command:
+            command_type = 'staddr'
+            pattern = re.compile('^staddr OBUF_x_(\d+) 0x(\d+)$')
+            matches = pattern.match(command)
+            assert matches, 'fusionUnitWrapper - malformed stdaddr OBUF_x_ command received'
 
-        # return [<BB row num> <BB col num> <op> <memLoc of operand1> <memLoc of operand2>]
-        return [matches.group(1), matches.group(2)] + command_blocks[1:]
+            return [command_type, matches.group(1), matches.group(2)]
+        elif "mul2" in command:
+            command_type = 'mul2'
+            command_blocks = command.split(':')
+            assert len(command_blocks) == 3, 'fusionUnitWrapper - malformed command received'
+            command_blocks[1] += ":"+command_blocks.pop(2)
+            pattern = re.compile('^FU_(\d+)_(\d+)$')
+            matches = pattern.match(command_blocks[0])
+            assert matches, 'fusionUnitWrapper - malformed target FF name received'
+
+            # return [<BB row num> <BB col num> <op> <memLoc of operand1> <memLoc of operand2>]
+            return [command_type, matches.group(1), matches.group(2)] + command_blocks[1:]
+        else:
+            assert 0 > 1, 'fusionUnitWrapper - command not yet handled'
 
     def addCommand(self, command):
         if type(command) == list:
@@ -69,15 +89,28 @@ class fusionUnitWrapper():
     def sendCommand(self):
         while len(self.commands) != 0:
             command_blocks = self.parseCommand(self.commands.pop(0))
-            fu_row = command_blocks[0]
-            fu_col = command_blocks[1]
-            fu_command = command_blocks[2]
+            command_type = command_blocks.pop(0)
 
-            self.fuData[utils.getNameString('FU',fu_row,fu_col)]['fu_obj'].addCommand(fu_command)
+            if command_type == 'comment':
+                return 0
+            elif command_type == 'staddr':
+                col = int(command_blocks[0])
+                addr = int('0x'+command_blocks[1], 16)
+                self.obuf_write_addr[col] = addr
+                return 0
+            elif command_type == 'mul2':
+                fu_row = command_blocks[0]
+                fu_col = command_blocks[1]
+                fu_command = command_blocks[2]
 
-        for i in range(self.fuRows):
-            for j in range(self.fuCols):
-                self.fuData[utils.getNameString('FU', i, j)]['fu_obj'].sendCommand()
+                self.fuData[utils.getNameString('FU',fu_row,fu_col)]['fu_obj'].addCommand(fu_command)
+            else:
+                assert 0 > 1, 'fusionUnitWrapper - command not yet handled'
+
+        if command_type == 'mul2':
+            for i in range(self.fuRows):
+                for j in range(self.fuCols):
+                    self.fuData[utils.getNameString('FU', i, j)]['fu_obj'].sendCommand()
 
     def execCommand(self):
         for i in range(self.fuRows):
@@ -88,6 +121,12 @@ class fusionUnitWrapper():
             self.shiftAdd_l2_objs[j].execAdd()
             self.shiftAdd_l2_objs[j].displayAttributes()
 
+            if len(self.shiftAdd_l2_objs[j].outputs) != 0:
+                assert self.obuf_write_addr[j] != -1, 'fusionUnitWrapper - write address of this obuf is wrong'
+                self.obuf_obj[j].store_mem(self.obuf_write_addr[j], \
+                                           utils.align_num_to_byte(self.shiftAdd_l2_objs[j].outputs.pop(0)))
+
+
 
 
     def getBusyBitBricks(self):
@@ -97,13 +136,13 @@ class fusionUnitWrapper():
 
 if __name__ == "__main__":
     DD = fusionUnitWrapper()
-    with open('instr.txt') as f:
-        command = f.read().splitlines()
-    # command = ["FU_0_0:BB_1_1:mul2 0x0-4 0x0-2", "FU_15_1:BB_1_1:mul2 0x0-4 0x0-2"]
-    # DD.fuData[utils.getNameString('FU',0,0)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
-    # DD.fuData[utils.getNameString('FU',0,0)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
-    # DD.fuData[utils.getNameString('FU',15,1)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
-    # DD.fuData[utils.getNameString('FU',15,1)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
+    #with open('instr.txt') as f:
+    #    command = f.read().splitlines()
+    command = ["staddr OBUF_x_0 0x0", "FU_0_0:BB_1_1:mul2 0x0-4 0x0-2", "staddr OBUF_x_1 0x0", "FU_15_1:BB_1_1:mul2 0x0-4 0x0-2"]
+    DD.fuData[utils.getNameString('FU',0,0)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
+    DD.fuData[utils.getNameString('FU',0,0)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
+    DD.fuData[utils.getNameString('FU',15,1)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
+    DD.fuData[utils.getNameString('FU',15,1)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
     DD.addCommand(command)
     DD.sendCommand()
     DD.getBusyBitBricks()

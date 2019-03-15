@@ -3,6 +3,7 @@ from memory import *
 import json
 import os
 import psutil
+import pprint
 
 
 class gen_op_code():
@@ -11,15 +12,34 @@ class gen_op_code():
         self.input_image = input_image
         self.kernel = kernel
         self.entire_sim_data = {}
+        self.entire_mem_data = {}
         self.cycles_used = 0
-        self.input_image_shape = self.input_image.shape
-        self.kernel_shape = self.kernel.shape
+        self.input_image_shape = list(self.input_image.shape)
+        self.kernel_shape = list(self.kernel.shape)
         # tells how many fusionUnits inside bitFusion
         self.bitFusion_rows = bitfusion_dim[0]
         self.bitFusion_cols = bitfusion_dim[1]
         # tells how many bitBricks inside a fusionUnit
         self.bitBrick_rows = bitbrick_dim[0]
         self.bitBrick_cols = bitbrick_dim[1]
+        self.init_buffers_in_mem_db(self.bitBrick_rows, self.bitBrick_cols)
+
+    def init_buffers_in_mem_db(self, fu_in_rows, fu_in_cols):
+        # TODO check if capacity of buffer finished
+        for r in range(fu_in_rows):
+            for c in range(fu_in_cols):
+                ibuf_name = 'IBUF_'+str(r)+"_"+str(c)
+                wbuf_name = 'WBUF_'+str(r)+"_"+str(c)
+                self.entire_mem_data[ibuf_name] = {}
+                self.entire_mem_data[ibuf_name]['next_byte'] = 0
+
+                self.entire_mem_data[wbuf_name] = {}
+                self.entire_mem_data[wbuf_name]['next_byte'] = 0
+
+        for c in range(fu_in_cols):
+            obuf_name = 'OBUF_x_'+str(c)
+            self.entire_mem_data[obuf_name] = {}
+            self.entire_mem_data[obuf_name]['next_byte'] = 0
 
     def init_cycle_in_db(self, cycle_num):
         new_cycle_num = cycle_num
@@ -32,6 +52,7 @@ class gen_op_code():
             self.entire_sim_data[new_cycle_name][col_name] = {}
             self.entire_sim_data[new_cycle_name][col_name]['nextFU'] = 'FU_0_' + str(col)
             self.entire_sim_data[new_cycle_name][col_name]['status'] = 'free'
+            self.entire_sim_data[new_cycle_name][col_name]['command'] = "nop"
 
             for row in range(self.bitFusion_rows):
                 fu_name = 'FU_'+str(row)+"_"+str(col)
@@ -56,6 +77,8 @@ class gen_op_code():
         self.cycles_used += 1
         self.init_cycle_in_db(self.cycles_used)
 
+    # gives a usable column for a kernel to use
+    # also spits out address for accumulator of that column
     def get_usable_bitfusion_col(self, window_num):
         cur_cycle = self.cycles_used
 
@@ -64,6 +87,8 @@ class gen_op_code():
                 self.entire_sim_data['cycle' + str(cur_cycle)]['col' + str(colNum)]['status'] = 'used'
                 print("gen_opcode.py <- get_usable_bitfusion_col= window:{} can be accomodated in cycle:{} at col:{}".\
                       format(window_num, self.cycles_used, colNum))
+
+                self.gen_staddr_cmd(colNum, 'col'+str(colNum), cur_cycle)
                 return cur_cycle, colNum
 
         # if reached here, it means next cycle needed
@@ -74,6 +99,7 @@ class gen_op_code():
                 self.entire_sim_data['cycle' + str(cur_cycle)]['col' + str(colNum)]['status'] = 'used'
                 print("gen_opcode.py <- get_usable_bitfusion_col= window:{} can be accomodated in cycle:{} at col:{}".\
                       format(window_num, self.cycles_used, colNum))
+                self.gen_staddr_cmd(colNum, 'col'+str(colNum), cur_cycle)
                 return cur_cycle, colNum
 
     def get_usable_fusion_unit(self, col, window_num):
@@ -91,15 +117,61 @@ class gen_op_code():
                 self.entire_sim_data['cycle'+str(cur_cycle)]['col'+str(newCol)]['FU_'+str(rowNum)+"_"+str(newCol)]['status'] = 'used'
                 return cur_cycle, newCol, rowNum
 
-    def assign_prod_to_fusionUnit(self, cycle, col, row, fu_name, inpA, inpB):
+    def get_mem_loc_to_store_col_accumulated(self, col, cycle):
+        obuf_name = 'OBUF_x_'+str(col)
+        avail_byte_loc = self.entire_mem_data[obuf_name]['next_byte']
+
+        # TODO check what is '3' below dependent on
+        self.entire_mem_data[obuf_name][avail_byte_loc] = {}
+        self.entire_mem_data[obuf_name][avail_byte_loc]['data'] = "from level2 adder of column:"+str(col)
+        self.entire_mem_data[obuf_name][avail_byte_loc]['cycle'] = cycle
+        self.entire_mem_data[obuf_name]['next_byte'] += 3
+
+        return avail_byte_loc
+
+    def gen_staddr_cmd(self, col, col_name, cycle):
+        byte_loc_to_store_in_obuf = self.get_mem_loc_to_store_col_accumulated(col, cycle)
+        self.entire_sim_data['cycle'+str(cycle)][col_name]['command'] = 'staddr OBUF_x_'+str(col)+" "+hex(byte_loc_to_store_in_obuf)
+        print('staddr OBUF_x_'+str(col)+" "+hex(byte_loc_to_store_in_obuf))
+
+
+    def get_mem_loc_of_product(self, col, row, fu_name, inp, weight, cycle):
+        # TODO check if the memory buf limit is exceeded
+        ibuf_name = 'IBUF_'+str(row)+"_"+str(col)
+        ibuf_byte_to_place_at = self.entire_mem_data[ibuf_name]['next_byte']
+        self.entire_mem_data[ibuf_name][ibuf_byte_to_place_at] = {}
+        self.entire_mem_data[ibuf_name][ibuf_byte_to_place_at]['data'] = inp
+        self.entire_mem_data[ibuf_name][ibuf_byte_to_place_at]['cycle'] = cycle
+        self.entire_mem_data[ibuf_name]['next_byte'] += 1
+
+        wbuf_name = 'WBUF_'+str(row)+"_"+str(col)
+        wbuf_byte_to_place_at = self.entire_mem_data[wbuf_name]['next_byte']
+        self.entire_mem_data[wbuf_name][wbuf_byte_to_place_at] = {}
+        self.entire_mem_data[wbuf_name][wbuf_byte_to_place_at]['data'] = weight
+        self.entire_mem_data[wbuf_name][wbuf_byte_to_place_at]['cycle'] = cycle
+        self.entire_mem_data[wbuf_name]['next_byte'] += 1
+
+        # TODO insert load from main memory to the above byte locations
+        return ibuf_byte_to_place_at, wbuf_byte_to_place_at
+
+
+
+
+    def assign_prod_to_fusionUnit(self, cycle, col, row, fu_name, inp, weight):
+        input_loc, weight_loc = self.get_mem_loc_of_product(col, row, fu_name, inp, weight, cycle)
         for i in range(self.bitBrick_rows):
             for j in range(self.bitBrick_cols):
                 # TODO change to memory locations
-                command = fu_name+":BB_"+str(i)+"_"+str(j)+":mul2: "+str(inpA)+"-"+str(6 - 2*i)+" "+str(inpB)+"-"+str(j*2)
+
+                command = fu_name+":BB_"+str(i)+"_"+str(j)+":mul2: "+hex(input_loc)+"-"+str(6 - 2*i)+" "+hex(weight_loc)+"-"+str(j*2)
+                # command = fu_name+":BB_"+str(i)+"_"+str(j)+":mul2: "+str(inp)+"-"+str(6 - 2*i)+" "+str(weight)+"-"+str(j*2)
+                print("command:"+command)
+
                 self.entire_sim_data['cycle'+str(cycle)]['col'+str(col)]['FU_'+str(row)+"_"+str(col)]['BB_'+str(i)+"_"+str(j)]\
                     ['command'] = command
                 self.entire_sim_data['cycle'+str(cycle)]['col'+str(col)]['FU_'+str(row)+"_"+str(col)]['BB_'+str(i)+"_"+str(j)] \
                     ['status'] = 'used'
+
 
     def execGeneration(self):
         window_num = 0
@@ -129,11 +201,25 @@ class gen_op_code():
 
 
 if __name__ == "__main__":
-    # process = psutil.Process(os.getpid())
-    # print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
+    process = psutil.Process(os.getpid())
+    print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
     input_image = [[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]]
     input_image = np.array(input_image, dtype=int)
+
+    # input_image = np.ones((3,3,3), dtype=int)
     kernel = np.array([[51,52,53], [54,55,56], [57,58,49]])
+
+    padding = 1
+
+    print("input_image_shape:{}".format(input_image.shape))
+
+    if padding == 1:
+        input_image = np.pad(input_image, (1, 1), 'constant', constant_values=(0))
+        if len(input_image.shape) == 3:
+            shape = input_image.shape
+            input_image = input_image[1:(shape[2] - 1), :, :]
+        elif len(input_image.shape) > 3:
+            assert len(input_image.shape) <= 3, 'error! padding would not be correct'
 
     GOp = gen_op_code(input_image, kernel, (4,4), (4,4))
     GOp.add_new_cycle()
@@ -142,9 +228,16 @@ if __name__ == "__main__":
     print(GOp.input_image)
     print(GOp.kernel)
     GOp.execGeneration()
-    #print(json.dumps(GOp.entire_sim_data, indent=4))
+
+    # TODO try taking buffer sizes into account, currently it is unlimited
+    # TODO next use data in dicts to generate instructions
+    # TODO next display per cycle interesting stats - like how many BBs were free
+
+    print(json.dumps(GOp.entire_sim_data, indent=4))
+    pprint.pprint(GOp.entire_mem_data)
     print("cycles used:{}".format(GOp.cycles_used))
-    # print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
+
+    print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
     '''
 # input_image = [[1,0,0,2,2],[0,2,0,1,2],[0,0,2,2,2],[1,1,2,1,1],[0,0,0,2,0]]
 input_image = [[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]]

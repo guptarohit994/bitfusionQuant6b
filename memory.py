@@ -30,6 +30,8 @@ class memory(mem_handlers):
 
 
 
+
+
 if __name__ == '__main__':
     mem_obj = memory("rohit", 12*1024) #12K
     data_to_store = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]
@@ -41,6 +43,8 @@ if __name__ == '__main__':
     mem_obj2 = memory("gupta", 12*1024)
     mem_obj2.store_mem(0x0,data)
     print(mem_obj2.load_mem(0x0,8))
+
+    mem_obj2.store_mem(0x0, utils.align_num_to_byte(1<<24))
 
     os.remove(mem_obj.mem_dir+"rohit")
     os.remove(mem_obj2.mem_dir+"gupta")

@@ -15,7 +15,7 @@ class shiftAdd():
         self.outputs = []
         self.shiftAddLevel = level
         # self.outputObj = output_obj
-        # fu_name in case of level 0 and 1 and colName in level 3
+        # fu_name in case of level 0 and 1 and colName in level 2
         self.fuName = parent_name
         self.status = 'free'
 
@@ -46,12 +46,17 @@ class shiftAdd():
         # input_obj will be a list of length equal to #FU in a column
         assert self.shiftAddLevel == 2, 'shiftAdd - execAdd can only be run for level2'
         output = 0
+        # would indicate how many shiftAdds had output
+        # TODO could check the status of inputObj as well
+        output_produced_count = 0
         for x in self.inputObjs:
             if len(x.shiftAddList_l1[0].outputs) != 0:
+                output_produced_count += 1
                 output += x.shiftAddList_l1[0].outputs.pop(0)
 
-        self.outputs.append(output)
-        self.status = 'complete'
+        if (output_produced_count != 0):
+            self.outputs.append(output)
+            self.status = 'complete'
 
     def computeSum(self, shiftAmts, inputs):
         """Returns the sum based on the inputs"""

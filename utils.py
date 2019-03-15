@@ -25,3 +25,21 @@ def pad(array, reference_shape, offsets):
     # Insert the array in the result at the specified offsets
     result[insertHere] = array
     return result
+
+def align_num_to_byte(data):
+    # assumed that after accumulating from a single column
+    # max output = 255 * 255 * 16 < 2^20 bits
+    temp_data = data
+    data_byte_array = []
+    data_byte_array.append(temp_data & 0xff)
+    temp_data = temp_data >> 8
+
+    data_byte_array.append(temp_data & 0xff)
+    temp_data = temp_data >> 8
+
+    data_byte_array.append(temp_data & 0xff)
+
+    # more than this not allowed
+    temp_data = temp_data >> 8
+    assert temp_data == 0, 'utils.py - align_num_to_byte - data greater than 24 bits'
+    return data_byte_array
