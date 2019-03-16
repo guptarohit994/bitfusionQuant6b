@@ -5,6 +5,8 @@ import os
 import psutil
 from pprint import pprint
 import re
+import argparse
+
 
 
 class gen_op_code():
@@ -32,6 +34,9 @@ class gen_op_code():
         self.obuf_size = obuf_size
         self.inputQuantization = input_quantization
         self.weightQuantization = weight_quantization
+
+        self.bitBricks_used_in_all_cycles = 0
+        self.fusionUnits_used_in_all_cycles = 0
 
 
         self.init_buffers_in_mem_db(self.bitFusion_rows, self.bitFusion_cols)
@@ -112,9 +117,24 @@ class gen_op_code():
                         self.entire_sim_data[new_cycle_name][col_name][fu_name][bb_name]['status'] = 'free'
                         self.entire_sim_data[new_cycle_name][col_name][fu_name][bb_name]['command'] = "nop"
 
+    def generate_interesting_stats(self, cycle):
+        cycle_name = cycle
+        for fu_cols in range(self.bitFusion_cols):
+            col_name = 'col'+str(fu_cols)
+            for fu_rows in range(self.bitFusion_rows):
+                fu_name = "FU_"+str(fu_rows)+"_"+str(fu_cols)
 
+                if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] != 'free':
+                    self.fusionUnits_used_in_all_cycles += 1
+
+                for bb_rows in range(self.bitBrick_rows):
+                    for bb_cols in range(self.bitBrick_cols):
+                        bb_name = 'BB_'+str(bb_rows)+"_"+str(bb_cols)
+                        if self.entire_sim_data[cycle_name][col_name][fu_name][bb_name]['status'] != 'free':
+                            self.bitBricks_used_in_all_cycles += 1
 
     def clear_cycle_from_sim_data(self, cycle_remove):
+        self.generate_interesting_stats(cycle_remove)
         with open('entire_sim_data.txt', 'a+') as file:
             file.write(cycle_remove)
             #pprint(self.entire_sim_data[cycle_remove], stream=file, indent=4)
@@ -678,6 +698,49 @@ class gen_op_code():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Optional app description')
+    parser.add_argument('--input_image_shape', type=int, nargs='+',
+                        help='input image shape, default:10 28 28')
+    parser.add_argument('--kernel_shape', type=int, nargs='+',
+                        help='kernel shape, default:3 3 3')
+    parser.add_argument('--padding', type=int, nargs='?',const=0,
+                        help='padding for each input, default:0')
+    parser.add_argument('--bitfusion_dim', type=int, nargs='+',
+                        help='layout of fusion units, defaut:16 16')
+    parser.add_argument('--ibuf_size', type=int, nargs='?',const=256,
+                        help='size (B) of input buffers for each fusion unit, default:128')
+    parser.add_argument('--wbuf_size', type=int, nargs='?',const=128,
+                        help='size (B) of weight buffers for each fusion unit, default:128')
+    parser.add_argument('--obuf_size', type=int, nargs='?',const=1024,
+                        help='size (B) of output buffers of each column of fusion units, default:1024')
+    parser.add_argument('--input_quant', type=int, nargs='?',const=8,
+                        help='inputs quantization 2/4/6/8, default:8')
+    parser.add_argument('--weight_quant', type=int, nargs='?',const=8,
+                        help='weights quantization 2/4/6/8, default:8')
+
+
+    args = parser.parse_args()
+    if args.input_image_shape == None:
+        args.input_image_shape = [10, 28, 28]
+    if args.kernel_shape == None:
+        args.kernel_shape = [3, 3, 3]
+    if args.bitfusion_dim == None:
+        args.bitfusion_dim = [16, 16]
+    if args.input_quant not in [2,4,6,8]:
+        parser.error("input_quant can only be 2, 4, 6 ,8")
+    if args.weight_quant not in [2,4,6,8]:
+        parser.error("weight_quant can only be 2, 4, 6 ,8")
+
+    print("input_image_shape:{}".format(args.input_image_shape))
+    print("kernel_shape:{}".format(args.kernel_shape))
+    print("padding:{}".format(args.padding))
+    print("bitfusion_dim:{}".format(args.bitfusion_dim))
+    print("ibuf_size:{}".format(args.ibuf_size))
+    print("wbuf_size:{}".format(args.wbuf_size))
+    print("obuf_size:{}".format(args.obuf_size))
+    print("input_quant:{}".format(args.input_quant))
+    print("weight_quant:{}".format(args.weight_quant))
+
     if os.path.exists("entire_sim_data.txt"):
         os.remove("entire_sim_data.txt")
 
@@ -698,11 +761,11 @@ if __name__ == "__main__":
 
     input_image = np.array(input_image, dtype=int)
 
-    # input_image = np.ones((10,28,28), dtype=int)
+    input_image = np.ones(tuple(args.input_image_shape), dtype=int)
     # kernel = np.array([[151,152,153], [154,155,156], [157,158,159]])
-    kernel = np.ones((1,4,4), dtype=int)
+    kernel = np.ones(tuple(args.kernel_shape), dtype=int)
 
-    padding = 0
+    padding = args.padding
 
     print("input_image_shape:{}".format(input_image.shape))
 
@@ -718,7 +781,8 @@ if __name__ == "__main__":
     # print(input_image)
     # exit(2)
 
-    GOp = gen_op_code(input_image, kernel, (4,4), (4,4), 256, 128, 256, 4, 6)
+    GOp = gen_op_code(input_image, kernel, tuple(args.bitfusion_dim), (4,4), args.ibuf_size, args.wbuf_size, \
+                      args.obuf_size, args.input_quant, args.weight_quant)
     GOp.add_new_cycle()
     #print(GOp.entire_sim_data)
     #print(json.dumps(GOp.entire_sim_data, indent=4))
@@ -733,5 +797,16 @@ if __name__ == "__main__":
     print(json.dumps(GOp.entire_sim_data, indent=4))
     pprint(GOp.entire_mem_data)
     print("cycles used:{}".format(GOp.cycles_used))
+    total_fusionUnits_across_all_cycles = (GOp.bitFusion_rows * GOp.bitFusion_cols * GOp.cycles_used)
+    total_bitBricks_across_all_cycles = (total_fusionUnits_across_all_cycles * \
+                                            GOp.bitBrick_rows * GOp.bitBrick_cols)
+
+    print("total bitBricks used across all cycles:{}/{} = {}%".format(GOp.bitBricks_used_in_all_cycles, \
+                                                                      total_bitBricks_across_all_cycles,\
+                                                                      GOp.bitBricks_used_in_all_cycles*100/total_bitBricks_across_all_cycles))
+
+    print("total fusionUnits used across all cycles:{}/{} = {}%".format(GOp.fusionUnits_used_in_all_cycles, \
+                                                                  total_fusionUnits_across_all_cycles,\
+                                                                  GOp.fusionUnits_used_in_all_cycles*100/total_fusionUnits_across_all_cycles))
 
     print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
