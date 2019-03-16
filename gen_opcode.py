@@ -3,16 +3,20 @@ from memory import *
 import json
 import os
 import psutil
-import pprint
+from pprint import pprint
+import re
 
 
 class gen_op_code():
     # bitfusion_dim is a tuple indicating how many rows and columns in bitfusiont
-    def __init__(self, input_image, kernel, bitfusion_dim=(4,4), bitbrick_dim=(4,4)):
+    def __init__(self, input_image, kernel, bitfusion_dim=(4,4), bitbrick_dim=(4,4),\
+                 ibuf_size=256, wbuf_size=128, obuf_size=16*1024 ):
         self.input_image = input_image
         self.kernel = kernel
         self.entire_sim_data = {}
         self.entire_mem_data = {}
+        # indicates how may windows are possible
+        self.window_num = 0
         self.cycles_used = 0
         self.input_image_shape = list(self.input_image.shape)
         self.kernel_shape = list(self.kernel.shape)
@@ -22,7 +26,11 @@ class gen_op_code():
         # tells how many bitBricks inside a fusionUnit
         self.bitBrick_rows = bitbrick_dim[0]
         self.bitBrick_cols = bitbrick_dim[1]
-        self.init_buffers_in_mem_db(self.bitBrick_rows, self.bitBrick_cols)
+        self.ibuf_size = ibuf_size
+        self.wbuf_size = wbuf_size
+        self.obuf_size = obuf_size
+
+        self.init_buffers_in_mem_db(self.bitFusion_rows, self.bitFusion_cols)
 
     def init_buffers_in_mem_db(self, fu_in_rows, fu_in_cols):
         # TODO check if capacity of buffer finished
@@ -31,10 +39,44 @@ class gen_op_code():
                 ibuf_name = 'IBUF_'+str(r)+"_"+str(c)
                 wbuf_name = 'WBUF_'+str(r)+"_"+str(c)
                 self.entire_mem_data[ibuf_name] = {}
-                self.entire_mem_data[ibuf_name]['next_byte'] = 0
+                self.entire_mem_data[ibuf_name]['all_lru'] = []
+
+                input_image_pixel_size = self.input_image_shape[0] * self.input_image_shape[1]
+                if len(self.input_image_shape)== 3:
+                    input_image_pixel_size *= self.input_image_shape[2]
+                for byte16 in range(int(self.ibuf_size/16)):
+                    if input_image_pixel_size > byte16*16:
+                        self.entire_mem_data[ibuf_name]['mem'+str(byte16*16)] = {}
+                        self.entire_mem_data[ibuf_name]['mem'+str(byte16*16)]['pix_byte'] = byte16*16
+                        self.entire_mem_data[ibuf_name]['mem'+str(byte16*16)]['lru'] = 0
+                        self.entire_mem_data[ibuf_name]['all_lru'].append(0)
+                        self.entire_mem_data[ibuf_name]['pix'+str(byte16*16)] = byte16*16
+                    else:
+                        self.entire_mem_data[ibuf_name]['mem'+str(byte16*16)] = {}
+                        self.entire_mem_data[ibuf_name]['mem'+str(byte16*16)]['pix_byte'] = 0
+                        self.entire_mem_data[ibuf_name]['mem'+str(byte16*16)]['lru'] = 0
+                        self.entire_mem_data[ibuf_name]['all_lru'].append(0)
+                        self.entire_mem_data[ibuf_name]['pix'+str(byte16*16)] = byte16*16
 
                 self.entire_mem_data[wbuf_name] = {}
-                self.entire_mem_data[wbuf_name]['next_byte'] = 0
+                self.entire_mem_data[wbuf_name]['all_lru'] = []
+                input_kernel_pixel_size = self.kernel_shape[0] * self.kernel_shape[1]
+                if len(self.kernel_shape) == 3:
+                    input_kernel_pixel_size *= self.kernel_shape[2]
+
+                for byte16 in range(int(self.wbuf_size/16)):
+                    if input_kernel_pixel_size < self.wbuf_size and input_kernel_pixel_size > byte16*16:
+                        self.entire_mem_data[wbuf_name]['mem'+str(byte16*16)] = {}
+                        self.entire_mem_data[wbuf_name]['mem'+str(byte16*16)]['pix_byte'] = byte16
+                        self.entire_mem_data[wbuf_name]['mem'+str(byte16*16)]['lru'] = 0
+                        self.entire_mem_data[wbuf_name]['all_lru'].append(0)
+                        self.entire_mem_data[wbuf_name]['pix'+str(byte16*16)] = byte16*16
+                    else:
+                        self.entire_mem_data[wbuf_name]['mem'+str(byte16*16)] = {}
+                        self.entire_mem_data[wbuf_name]['mem'+str(byte16*16)]['pix_byte'] = 0
+                        self.entire_mem_data[wbuf_name]['mem'+str(byte16*16)]['lru'] = 0
+                        self.entire_mem_data[wbuf_name]['all_lru'].append(0)
+                        self.entire_mem_data[wbuf_name]['pix'+str(byte16*16)] = byte16*16
 
         for c in range(fu_in_cols):
             obuf_name = 'OBUF_x_'+str(c)
@@ -68,12 +110,33 @@ class gen_op_code():
 
 
 
+    def clear_cycle_from_sim_data(self, cycle_remove):
+        with open('entire_sim_data.txt', 'a+') as file:
+            file.write(cycle_remove)
+            #pprint(self.entire_sim_data[cycle_remove], stream=file, indent=4)
+            file.write(json.dumps(self.entire_sim_data[cycle_remove], indent=4))  # use `json.loads` to do the reverse
+            file.write("\n")
+        self.entire_sim_data.pop(cycle_remove, None)
 
+    def clear_full_obuf_data(self, obuf_name):
+        with open(obuf_name+".txt", 'a+') as file:
+            file.write(obuf_name+"\n")
+            file.write(json.dumps(self.entire_mem_data[obuf_name], indent=4))
+            file.write("\n")
 
-    def get_next_bitBrick_in_fusionUnit(self):
-        temp = 1
+        obuf_keys = list(self.entire_mem_data[obuf_name].keys())
+        for key in obuf_keys:
+            if key == 'next_byte':
+                continue
+            else:
+                self.entire_mem_data[obuf_name].pop(key, None)
 
+    # adds new cycle to the DB but removes data of previous cycles into a file
     def add_new_cycle(self):
+        if self.cycles_used > 0:
+            cycle_remove = 'cycle'+str(self.cycles_used)
+            self.clear_cycle_from_sim_data(cycle_remove)
+
         self.cycles_used += 1
         self.init_cycle_in_db(self.cycles_used)
 
@@ -121,12 +184,15 @@ class gen_op_code():
         obuf_name = 'OBUF_x_'+str(col)
         avail_byte_loc = self.entire_mem_data[obuf_name]['next_byte']
 
-        # TODO check what is '3' below dependent on
+        # TODO check what is '4' below dependent on
         self.entire_mem_data[obuf_name][avail_byte_loc] = {}
-        self.entire_mem_data[obuf_name][avail_byte_loc]['data'] = "from level2 adder of column:"+str(col)
+        # self.entire_mem_data[obuf_name][avail_byte_loc]['data'] = "from level2 adder of column:"+str(col)
         self.entire_mem_data[obuf_name][avail_byte_loc]['cycle'] = cycle
-        self.entire_mem_data[obuf_name]['next_byte'] += 3
-
+        self.entire_mem_data[obuf_name]['next_byte'] += 4
+        # if obuf is now full,
+        if len(self.entire_mem_data[obuf_name].keys()) - 1 == self.obuf_size/4:
+            print("TODO: {} is full now in cycles:{}".format(obuf_name, cycle))
+            self.clear_full_obuf_data(obuf_name)
         return avail_byte_loc
 
     def gen_staddr_cmd(self, col, col_name, cycle):
@@ -154,11 +220,109 @@ class gen_op_code():
         # TODO insert load from main memory to the above byte locations
         return ibuf_byte_to_place_at, wbuf_byte_to_place_at
 
+    def check_byte_in_buf(self, buf_name, starting_pixel_byte):
+        if "pix"+str(starting_pixel_byte) in self.entire_mem_data[buf_name].keys():
+            byte_in_mem = self.entire_mem_data[buf_name]['pix'+str(starting_pixel_byte)]
+
+            # update lru
+            self.entire_mem_data[buf_name]['all_lru'] = []
+            for key in self.entire_mem_data[buf_name]:
+                if "mem" in key:
+                    if key == 'mem'+str(byte_in_mem):
+                        self.entire_mem_data[buf_name][key]['lru'] = 0
+                        self.entire_mem_data[buf_name]['all_lru'].append(self.entire_mem_data[buf_name][key]['lru'])
+                    else:
+                        self.entire_mem_data[buf_name][key]['lru'] += 1
+                        self.entire_mem_data[buf_name]['all_lru'].append(self.entire_mem_data[buf_name][key]['lru'])
 
 
+            return self.entire_mem_data[buf_name]['pix'+str(starting_pixel_byte)]
+        else:
+            # TODO spit out instr for load from mem to bufa
+            print("Need to access 4B starting from {} in {}".format(starting_pixel_byte, buf_name))
+            list.sort(self.entire_mem_data[buf_name]['all_lru'], reverse=1)
+            max_lru = self.entire_mem_data[buf_name]['all_lru'].pop(0)
+            return_mem_location = 0
 
-    def assign_prod_to_fusionUnit(self, cycle, col, row, fu_name, inp, weight):
-        input_loc, weight_loc = self.get_mem_loc_of_product(col, row, fu_name, inp, weight, cycle)
+            replace_done = 0
+            self.entire_mem_data[buf_name]['all_lru'] = []
+            temp_keys = list(self.entire_mem_data[buf_name].keys())
+
+            for key in temp_keys:
+                if "mem" in key:
+                    # just do the replace once
+                    # if same many have the highest LRU as same, the one with lower byte would be evicted
+                    if self.entire_mem_data[buf_name][key]['lru'] == max_lru and replace_done == 0:
+                        replace_done = 1
+                        # this is the key to replace
+                        pixel = self.entire_mem_data[buf_name][key]['pix_byte']
+                        print("Evicting from {} at {} which currently has pixel_byte:{}".format(buf_name,key, pixel))
+                        self.entire_mem_data[buf_name].pop('pix'+str(pixel), None)
+
+                        pattern = re.compile('mem(\d+)')
+                        matches = pattern.match(key)
+                        assert matches, 'gen_opcode.py <- check_byte_in_buf: no match found'
+                        mem_location = int(matches.group(1))
+                        return_mem_location = mem_location
+                        self.entire_mem_data[buf_name]['pix'+str(starting_pixel_byte)] = mem_location
+                        self.entire_mem_data[buf_name]['mem'+str(mem_location)]['pix_byte'] = starting_pixel_byte
+                        self.entire_mem_data[buf_name]['mem'+str(mem_location)]['lru'] = 0
+                        self.entire_mem_data[buf_name]['all_lru'].append(self.entire_mem_data[buf_name]['mem'+str(mem_location)]['lru'])
+
+                    else:
+                        self.entire_mem_data[buf_name][key]['lru'] += 1
+                        self.entire_mem_data[buf_name]['all_lru'].append(self.entire_mem_data[buf_name][key]['lru'])
+            return return_mem_location
+
+    def get_ibuf_address_for_coordinates(self, image_num, image_row_coor, image_col_coor, col, row):
+        if len(self.input_image_shape) == 3:
+            num_bytes = (image_num * self.input_image_shape[1] * self.input_image_shape[2]) + \
+                        (self.input_image_shape[2] * image_row_coor) + \
+                        (image_col_coor)
+        elif len(self.input_image_shape) == 2:
+            # single image
+            num_bytes = (self.input_image_shape[1] * image_row_coor) + image_col_coor
+        else:
+            assert 0 > 1, 'gen_opcode.py - get_ibuf_address_for_coordinates: unhandled case'
+
+        # aligned to 16B accesses stores to ibuf
+        num_bytes_aligned = int(num_bytes/16) * 16
+
+        # now check if it exists in buf
+        ibuf_name = 'IBUF_'+str(row)+"_"+str(col)
+        print("need to find address of pixel:{} in {} and aligned to 16B is:{}".format(num_bytes, ibuf_name, num_bytes_aligned))
+        mem_location = self.check_byte_in_buf(ibuf_name, num_bytes_aligned) + (num_bytes%16)
+        return mem_location
+
+    def get_wbuf_address_for_coordinates(self, kernel_num, kernel_row_coor, kernel_col_coor, col, row):
+        if len(self.kernel_shape) == 3:
+            num_bytes = (kernel_num * self.kernel_shape[1] * self.kernel_shape[2]) + \
+                        (self.kernel_shape[2] * kernel_row_coor) + \
+                        (kernel_col_coor)
+        elif len(self.kernel_shape) == 2:
+            # single image
+            num_bytes = (self.kernel_shape[1] * kernel_row_coor) + kernel_col_coor
+        else:
+            assert 0 > 1, 'gen_opcode.py - get_wbuf_address_for_coordinates: unhandled case'
+
+        # aligned to 16B accesses stores to ibuf
+        num_bytes_aligned = int(num_bytes/16)
+
+        # now check if it exists in buf
+        wbuf_name = 'WBUF_'+str(row)+"_"+str(col)
+        print("need to find address of weight:{} in {} and aligned to 16B is:{}".format(num_bytes, wbuf_name, num_bytes_aligned))
+        mem_location = self.check_byte_in_buf(wbuf_name, num_bytes_aligned) + (num_bytes%16)
+        return mem_location
+
+
+    def assign_prod_to_fusionUnit(self, image_num, image_row_coor, image_col_coor, cycle, col, row, fu_name,
+                                  kernel_num, kernel_row_coor, kernel_col_coor, inp, weight):
+        # col and row are coordinates of the fusion unit
+        print("received image_num:{}, image_row_coor:{}, image_col_coor:{}, col:{}, row:{}".format(image_num, image_row_coor, image_col_coor, col, row))
+        print("received kernel_num:{}, kernel_row_coor:{}, kernel_col_coor:{}, col:{}, row:{}".format(kernel_num, kernel_row_coor, kernel_col_coor, col, row))
+        input_loc = self.get_ibuf_address_for_coordinates(image_num, image_row_coor, image_col_coor, col, row)
+        weight_loc = self.get_wbuf_address_for_coordinates(kernel_num, kernel_row_coor, kernel_col_coor, col, row)
+        print("input:{} is present at {} and weight:{} is present at {}".format(inp, input_loc, weight,weight_loc))
         for i in range(self.bitBrick_rows):
             for j in range(self.bitBrick_cols):
                 # TODO change to memory locations
@@ -172,44 +336,92 @@ class gen_op_code():
                 self.entire_sim_data['cycle'+str(cycle)]['col'+str(col)]['FU_'+str(row)+"_"+str(col)]['BB_'+str(i)+"_"+str(j)] \
                     ['status'] = 'used'
 
-
     def execGeneration(self):
-        window_num = 0
-        for r_i in range(self.input_image_shape[0] - self.kernel_shape[0] + 1):
-            for c_i in range(self.input_image_shape[1] - self.kernel_shape[1] + 1):
+        if len(self.input_image_shape) == 3:
+            # multiple grayscale images
+            for image in range(self.input_image_shape[0]):
+                print("starting with image#{}".format(image))
+                if (len(self.kernel_shape) == 3):
+                    for kernel_num in range(self.kernel_shape[0]):
+                        print("starting with kernel#{}".format(kernel_num))
+                        self.execGeneration_for_each_image(image, self.input_image[image], self.input_image_shape[1:],
+                                                            kernel_num, self.kernel[kernel_num], self.kernel_shape[1:])
+                else:
+                    print("starting with kernel#0")
+                    self.execGeneration_for_each_image(image, self.input_image[image], self.input_image_shape[1:],
+                                                       0, self.kernel, self.kernel_shape)
+        elif len(self.input_image_shape) == 2:
+            # single grayscale image
+            print("starting with image#0")
+            if len(self.kernel_shape) == 3:
+                for kernel_num in range(self.kernel_shape[0]):
+                    print("starting with kernel#{}".format(kernel_num))
+                    self.execGeneration_for_each_image(0, self.input_image, self.input_image_shape,
+                                                       kernel_num, self.kernel[kernel_num], self.kernel_shape[1:])
+            else:
+                print("starting with kernel#0")
+                self.execGeneration_for_each_image(0, self.input_image, self.input_image_shape,
+                                                   0, self.kernel, self.kernel_shape)
+        else:
+            assert 1 > 0, 'gen_opcode.py - execGeneration: unhandled case of input image shape'
+
+    def execGeneration_for_each_image(self, image_num, input_single_image, input_single_image_shape, kernel_num, single_kernel, single_kernel_shape):
+        # window_num = 0
+        for r_i in range(input_single_image_shape[0] - single_kernel_shape[0] + 1):
+            for c_i in range(input_single_image_shape[1] - single_kernel_shape[1] + 1):
                 # starting of a window
                 # all products inside a window would be spawned on a single column of FUs until fit
                 # if not fit, spawn the remaining on next available column
-                cycle_assigned, col_assigned = self.get_usable_bitfusion_col(window_num)
+                cycle_assigned, col_assigned = self.get_usable_bitfusion_col(self.window_num)
 
                 prod_num = 0
-                for r_w in range(self.kernel_shape[0]):
-                    for c_w in range(self.kernel_shape[1]):
+                for r_w in range(single_kernel_shape[0]):
+                    for c_w in range(single_kernel_shape[1]):
                         # starting of a kernel multiplication
-                        product = self.input_image[r_i + r_w][c_i + c_w] * self.kernel[r_w][c_w]
+                        product = input_single_image[r_i + r_w][c_i + c_w] * single_kernel[r_w][c_w]
 
-                        cycle_assigned, col_assigned, row_assigned = self.get_usable_fusion_unit(col_assigned, window_num)
+                        cycle_assigned, col_assigned, row_assigned = self.get_usable_fusion_unit(col_assigned, self.window_num)
                         fu_assigned = 'FU_' + str(row_assigned) + "_" + str(col_assigned)
-                        self.assign_prod_to_fusionUnit(cycle_assigned, col_assigned, row_assigned,\
-                                                       fu_assigned,self.input_image[r_i + r_w][c_i + c_w], self.kernel[r_w][c_w])
+                        self.assign_prod_to_fusionUnit(image_num, r_i + r_w, c_i + c_w, cycle_assigned, col_assigned, row_assigned,\
+                                                       fu_assigned, kernel_num, r_w, c_w, input_single_image[r_i + r_w][c_i + c_w], single_kernel[r_w][c_w])
 
-                        print("window:{}, cycle:{}, FU:{}, {} * {}".format(window_num, cycle_assigned,\
-                                                                                  fu_assigned, self.input_image[r_i + r_w][c_i + c_w], self.kernel[r_w][c_w]))
+                        print("window:{}, cycle:{}, FU:{}, {} * {}".format(self.window_num, cycle_assigned,\
+                                                                                  fu_assigned, input_single_image[r_i + r_w][c_i + c_w], single_kernel[r_w][c_w]))
                         prod_num += 1
-                window_num += 1
+
+                self.window_num += 1
+                # pprint(self.entire_mem_data)
+                # if self.window_num == 4:
+                #     exit(2)
 
 
 
 if __name__ == "__main__":
+    if os.path.exists("entire_sim_data.txt"):
+        os.remove("entire_sim_data.txt")
+
+    obuf_out_file_pattern = re.compile('^OBUF_x_(\d+).txt')
+
+    for filename in os.listdir("./"):
+        if obuf_out_file_pattern.match(filename):
+            os.remove(filename)
     process = psutil.Process(os.getpid())
     print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
-    input_image = [[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]]
+    # single image
+    # input_image = [[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]]
+
+    # multiple grayscale images
+    input_image = [[[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]],\
+                   [[26,27,28,29,30], [31,32,33,34,35], [36,37,38,39,40], [41,42,43,44,45], [46,47,48,49,50]],\
+                   [[51,52,53,54,55], [56,57,58,59,60], [61,62,63,64,65], [66,67,68,69,70], [71,72,73,74,75]]]
+
     input_image = np.array(input_image, dtype=int)
 
-    # input_image = np.ones((3,3,3), dtype=int)
-    kernel = np.array([[51,52,53], [54,55,56], [57,58,49]])
+    input_image = np.ones((10,28,28), dtype=int)
+    # kernel = np.array([[151,152,153], [154,155,156], [157,158,159]])
+    kernel = np.ones((4,3,3), dtype=int)
 
-    padding = 1
+    padding = 0
 
     print("input_image_shape:{}".format(input_image.shape))
 
@@ -217,24 +429,29 @@ if __name__ == "__main__":
         input_image = np.pad(input_image, (1, 1), 'constant', constant_values=(0))
         if len(input_image.shape) == 3:
             shape = input_image.shape
-            input_image = input_image[1:(shape[2] - 1), :, :]
+            input_image = input_image[1:(shape[0] - 1), :, :]
         elif len(input_image.shape) > 3:
             assert len(input_image.shape) <= 3, 'error! padding would not be correct'
 
-    GOp = gen_op_code(input_image, kernel, (4,4), (4,4))
+    # print("input_image_shape:{}".format(input_image.shape))
+    # print(input_image)
+    # exit(2)
+
+    GOp = gen_op_code(input_image, kernel, (16,16), (4,4), 256, 128, 256)
     GOp.add_new_cycle()
     #print(GOp.entire_sim_data)
     #print(json.dumps(GOp.entire_sim_data, indent=4))
     print(GOp.input_image)
     print(GOp.kernel)
     GOp.execGeneration()
+    GOp.clear_cycle_from_sim_data('cycle'+str(GOp.cycles_used))
 
     # TODO try taking buffer sizes into account, currently it is unlimited
     # TODO next use data in dicts to generate instructions
     # TODO next display per cycle interesting stats - like how many BBs were free
 
     print(json.dumps(GOp.entire_sim_data, indent=4))
-    pprint.pprint(GOp.entire_mem_data)
+    pprint(GOp.entire_mem_data)
     print("cycles used:{}".format(GOp.cycles_used))
 
     print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
@@ -272,55 +489,4 @@ window_col_end = 0
 window_row_start = 0
 window_row_end = 0
 
-count = 0
-window = 0
-# contains data that should be present in ibuf of each bb
-input_image_window_data = []
-
-instr_file = open("instr.txt", "w")
-
-def gen_bitBrick_code():
-    temp = 1
-
-def get_next_fusion_unit():
-    temp = 1
-
-def get_next_bitfusion_column():
-    temp = 1
-
-
-
-
-
-# window moves --> and then down and the again -->
-for r in range(input_image_shape[0]-kernel_1_shape[0]+1):
-    for c in range(input_image_shape[1]-kernel_1_shape[1]+1):
-        input_image_window_data.append([])
-        window_product_num = 0
-        for x in range(kernel_1_shape[0]):
-            for y in range(kernel_1_shape[1]):
-                ibuf = memory("IBUF_"+str(window_product_num)+"_"+str(window), 1024)
-                wbuf = memory("WBUF_"+str(window_product_num)+"_"+str(window), 1024)
-                count += 1
-                product = str(input_image[r+x, c+y]) + " * " + str(kernel_1[x, y])
-                input_image_window_data[window].append(input_image[r+x, c+y])
-                print("FU_{}_{}:mul2 {} {} = {}".\
-                      format(window_product_num, window,\
-                             input_image[r+x, c+y], kernel_1[x, y], input_image[r+x, c+y] * kernel_1[x, y]))
-                for i in range(4):
-                    for j in range(4):
-                        instr_file.write("FU_{}_{}:BB_{}_{}:mul2 0x{}-{} 0x{}-{}\n".\
-                                 format(window_product_num, window, i, j, \
-                                        0, (6 - (2 * i)), \
-                                        0, j*2))
-                # print("count:{}, window:{}, {}".format(count, window, product))
-                print("write to IBUF_{}_{} <- {}".format(window_product_num, window, [input_image_window_data[window][window_product_num]]))
-                ibuf.store_mem(0x0, [input_image_window_data[window][window_product_num]])
-                print("write to WBUF_{}_{} <- {}".format(window_product_num, window, [kernel_1.reshape(9).tolist()[window_product_num]]))
-                wbuf.store_mem(0x0, [kernel_1.reshape(9).tolist()[window_product_num]])
-                window_product_num += 1
-        window += 1
-
-print(input_image_window_data)
-instr_file.close()
 '''
