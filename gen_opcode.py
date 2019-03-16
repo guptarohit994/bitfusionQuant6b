@@ -10,7 +10,8 @@ import re
 class gen_op_code():
     # bitfusion_dim is a tuple indicating how many rows and columns in bitfusiont
     def __init__(self, input_image, kernel, bitfusion_dim=(4,4), bitbrick_dim=(4,4),\
-                 ibuf_size=256, wbuf_size=128, obuf_size=16*1024 ):
+                 ibuf_size=256, wbuf_size=128, obuf_size=16*1024,\
+                 input_quantization=8, weight_quantization=8):
         self.input_image = input_image
         self.kernel = kernel
         self.entire_sim_data = {}
@@ -29,6 +30,9 @@ class gen_op_code():
         self.ibuf_size = ibuf_size
         self.wbuf_size = wbuf_size
         self.obuf_size = obuf_size
+        self.inputQuantization = input_quantization
+        self.weightQuantization = weight_quantization
+
 
         self.init_buffers_in_mem_db(self.bitFusion_rows, self.bitFusion_cols)
 
@@ -148,8 +152,8 @@ class gen_op_code():
         for colNum in range(self.bitFusion_cols):
             if self.entire_sim_data['cycle'+str(cur_cycle)]['col'+str(colNum)]['status'] == 'free':
                 self.entire_sim_data['cycle' + str(cur_cycle)]['col' + str(colNum)]['status'] = 'used'
-                print("gen_opcode.py <- get_usable_bitfusion_col= window:{} can be accomodated in cycle:{} at col:{}".\
-                      format(window_num, self.cycles_used, colNum))
+                # print("gen_opcode.py <- get_usable_bitfusion_col= window:{} can be accomodated in cycle:{} at col:{}".\
+                #      format(window_num, self.cycles_used, colNum))
 
                 self.gen_staddr_cmd(colNum, 'col'+str(colNum), cur_cycle)
                 return cur_cycle, colNum
@@ -160,24 +164,66 @@ class gen_op_code():
         for colNum in range(self.bitFusion_cols):
             if self.entire_sim_data['cycle'+str(cur_cycle)]['col'+str(colNum)]['status'] == 'free':
                 self.entire_sim_data['cycle' + str(cur_cycle)]['col' + str(colNum)]['status'] = 'used'
-                print("gen_opcode.py <- get_usable_bitfusion_col= window:{} can be accomodated in cycle:{} at col:{}".\
-                      format(window_num, self.cycles_used, colNum))
+                # print("gen_opcode.py <- get_usable_bitfusion_col= window:{} can be accomodated in cycle:{} at col:{}".\
+                #      format(window_num, self.cycles_used, colNum))
                 self.gen_staddr_cmd(colNum, 'col'+str(colNum), cur_cycle)
                 return cur_cycle, colNum
 
+    def get_fusion_unit_status_from_quantization(self, cycle_num, col_num, fu_name):
+        cycle_name = 'cycle'+str(cycle_num)
+        col_name = 'col'+str(col_num)
+        pair_value = (self.inputQuantization, self.weightQuantization)
+
+        # status = free, top_right_used, top_used, bottom_right_used, used
+        if pair_value in [(8,8), (8,6), (6,8), (6,6)]:
+            if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'used':
+                return 'free'
+            else:
+                return 'used'
+        elif pair_value in [(8,4), (4,8), (8,2), (2,8), (6,4), (4,6)]:
+            if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
+                return 'top_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_used':
+                return 'used'
+        elif pair_value in [(5,5)]:
+            if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
+                return 'bottom_right_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_right_used':
+                return 'used'
+        elif pair_value in [(6,2), (2,6), (4,4), (4,2), (2,2)]:
+            if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
+                return 'top_right_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_right_used':
+                return 'top_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_used':
+                return 'bottom_right_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_right_used':
+                return 'used'
+
+
+
+    # when quantized to sub-byte levels, order of filling a bitBrick is
+    # top-right -> top-left -> bottom-right -> bottom-left
     def get_usable_fusion_unit(self, col, window_num):
         cur_cycle = self.cycles_used
+        cycle_name = 'cycle'+str(cur_cycle)
+        col_name = 'col'+str(col)
 
         for rowNum in range(self.bitFusion_rows):
-            if self.entire_sim_data['cycle'+str(cur_cycle)]['col'+str(col)]['FU_'+str(rowNum)+"_"+str(col)]['status'] == 'free':
-                self.entire_sim_data['cycle'+str(cur_cycle)]['col'+str(col)]['FU_'+str(rowNum)+"_"+ str(col)]['status'] = 'used'
+            fu_name = 'FU_'+str(rowNum)+"_"+str(col)
+            if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] != 'used':
+                self.entire_sim_data[cycle_name][col_name][fu_name]['status'] = self.get_fusion_unit_status_from_quantization(cur_cycle, col, fu_name)
                 return cur_cycle, col, rowNum
 
         # if reached here, it means next column is needed
         cur_cycle, newCol = self.get_usable_bitfusion_col(window_num)
+        cycle_name = 'cycle'+str(cur_cycle)
+        col_name = 'col'+str(newCol)
+
         for rowNum in range(self.bitFusion_rows):
-            if self.entire_sim_data['cycle'+str(cur_cycle)]['col'+str(newCol)]['FU_'+str(rowNum)+"_"+str(newCol)]['status'] == 'free':
-                self.entire_sim_data['cycle'+str(cur_cycle)]['col'+str(newCol)]['FU_'+str(rowNum)+"_"+str(newCol)]['status'] = 'used'
+            fu_name = 'FU_'+str(rowNum)+"_"+str(newCol)
+            if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
+                self.entire_sim_data[cycle_name][col_name][fu_name]['status'] = self.get_fusion_unit_status_from_quantization(cur_cycle, newCol, fu_name)
                 return cur_cycle, newCol, rowNum
 
     def get_mem_loc_to_store_col_accumulated(self, col, cycle):
@@ -240,7 +286,7 @@ class gen_op_code():
         else:
             # TODO spit out instr for load from mem to bufa
             print("Need to access 4B starting from {} in {}".format(starting_pixel_byte, buf_name))
-            list.sort(self.entire_mem_data[buf_name]['all_lru'], reverse=1)
+            list.sort(self.entire_mem_data[buf_name]['all_lru'], reverse=True)
             max_lru = self.entire_mem_data[buf_name]['all_lru'].pop(0)
             return_mem_location = 0
 
@@ -290,7 +336,7 @@ class gen_op_code():
 
         # now check if it exists in buf
         ibuf_name = 'IBUF_'+str(row)+"_"+str(col)
-        print("need to find address of pixel:{} in {} and aligned to 16B is:{}".format(num_bytes, ibuf_name, num_bytes_aligned))
+        # print("need to find address of pixel:{} in {} and aligned to 16B is:{}".format(num_bytes, ibuf_name, num_bytes_aligned))
         mem_location = self.check_byte_in_buf(ibuf_name, num_bytes_aligned) + (num_bytes%16)
         return mem_location
 
@@ -310,31 +356,264 @@ class gen_op_code():
 
         # now check if it exists in buf
         wbuf_name = 'WBUF_'+str(row)+"_"+str(col)
-        print("need to find address of weight:{} in {} and aligned to 16B is:{}".format(num_bytes, wbuf_name, num_bytes_aligned))
+        # print("need to find address of weight:{} in {} and aligned to 16B is:{}".format(num_bytes, wbuf_name, num_bytes_aligned))
         mem_location = self.check_byte_in_buf(wbuf_name, num_bytes_aligned) + (num_bytes%16)
         return mem_location
 
+    def generate_bitBricks_usage_pattern(self, cycle_name, col_name, fu_name):
+        input_pair = (self.inputQuantization, self.weightQuantization)
+        status = self.entire_sim_data[cycle_name][col_name][fu_name]['status']
+        assert status in ['free', 'top_right_used', 'top_used', 'bottom_right_used', 'used'], 'gen_opcode.py - illegal FU status found'
+        shift_combination = [[0 for x in range(self.bitBrick_cols)] for y in range(self.bitBrick_rows)]
+        if input_pair == (8, 8):
+            shift_combination = [[(0, 6), (0, 4), (0, 2), (0, 0)],
+                                 [(2, 6), (2, 4), (2, 2), (2, 0)],
+                                 [(4, 6), (4, 4), (4, 2), (4, 0)],
+                                 [(6, 6), (6, 4), (6, 2), (6, 0)]]
+        elif input_pair == (8, 6):
+            shift_combination = [[(6, 0), (4, 0), (2, 0), (0, 0)],
+                                 [(6, 2), (4, 2), (2, 2), (0, 2)],
+                                 [(6, 4), (4, 4), (2, 4), (0, 4)],
+                                 [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+        elif input_pair == (8, 4):
+            if status == 'top_used':
+                shift_combination = [[(6, 0), (4, 0), (2, 0), (0, 0)],
+                                    [(6, 2), (4, 2), (2, 2), (0, 2)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(6, 0), (4, 0), (2, 0), (0, 0)],
+                                    [(6, 2), (4, 2), (2, 2), (0, 2)]]
+        elif input_pair == (8, 2):
+            if status == 'top_used':
+                shift_combination = [[(6, 0), (4, 0), (2, 0), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(6, 0), (4, 0), (2, 0), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+        elif input_pair == (6, 8):
+            shift_combination = [[(4, 2), (2, 2), (0, 2), (0, 0)],
+                                 [(4, 4), (2, 4), (0, 4), (2, 0)],
+                                 [(4, 6), (2, 6), (0, 6), (4, 0)],
+                                 [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+        elif input_pair == (6, 6):
+            shift_combination = [[(2, 4), (0, 4), (0, 2), (0, 0)],
+                                 [(4, 4), (4, 2), (2, 2), (2, 0)],
+                                 [(-1, -1), (-1, -1), (-1, -1), (4, 0)],
+                                 [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+        elif input_pair == (6, 4):
+            if status == 'top_used':
+                shift_combination = [[(-1, -1), (2, 2), (0, 2), (0, 0)],
+                                    [(-1, -1), (4, 2), (4, 0), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (2, 2), (0, 2), (0, 0)],
+                                     [(-1, -1), (4, 2), (4, 0), (2, 0)]]
+        elif input_pair == (6, 2):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                    [(-1, -1), (-1, -1), (4, 0), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0,0), (-1, -1), (-1, -1)],
+                                     [(4, 0), (2, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (4, 0), (2, 0)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(4, 0), (2, 0), (-1, -1), (-1, -1)]]
+        elif input_pair == (4, 8):
+            if status == 'top_used':
+                shift_combination = [[(2, 4), (0, 4), (0, 2), (0, 0)],
+                                     [(2, 6), (0, 6), (2, 2), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(2, 4), (0, 4), (0, 2), (0, 0)],
+                                     [(2, 6), (0, 6), (2, 2), (2, 0)]]
+        elif input_pair == (4, 6):
+            if status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 4), (0, 2), (0, 0)],
+                                    [(-1, -1), (2, 4), (2, 2), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 4), (0, 2), (0, 0)],
+                                     [(-1, -1), (2, 4), (2, 2), (2, 0)]]
+        elif input_pair == (4, 4):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (0, 2), (0, 0)],
+                                    [(-1, -1), (-1, -1), (2, 2), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'top_used':
+                shift_combination = [[(0, 2), (0, 0), (-1, -1), (-1, -1)],
+                                     [(2, 2), (2, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (0, 2), (0, 0)],
+                                     [(-1, -1), (-1, -1), (2, 2), (2, 0)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(0, 2), (0, 0), (-1, -1), (-1, -1)],
+                                     [(2, 2), (2, 0), (-1, -1), (-1, -1)]]
+        elif input_pair == (4, 2):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (2, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (2, 0)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (2, 0), (-1, -1), (-1, -1)]]
+        elif input_pair == (2, 8):
+            if status == 'top_used':
+                shift_combination = [[(0, 6), (0, 4), (0, 2), (0, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(0, 6), (0, 4), (0, 2), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+        elif input_pair == (2, 6):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (0, 4), (0, 2)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(0, 4), (0, 2), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (0, 4), (0, 2)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(0, 4), (0, 2), (-1, -1), (-1, -1)]]
+        elif input_pair == (2, 4):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (0, 2)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 2), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 2)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 2), (-1, -1), (-1, -1)]]
+        elif input_pair == (2, 2):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+        else:
+            assert 0 > 1, 'gen_opcode.py - unsupported quantization pair found'
+        return shift_combination
 
+
+    # when quantized to sub-byte levels, order of filling a bitBrick is
+    # top-right -> top-left -> bottom-right -> bottom-left
     def assign_prod_to_fusionUnit(self, image_num, image_row_coor, image_col_coor, cycle, col, row, fu_name,
                                   kernel_num, kernel_row_coor, kernel_col_coor, inp, weight):
         # col and row are coordinates of the fusion unit
-        print("received image_num:{}, image_row_coor:{}, image_col_coor:{}, col:{}, row:{}".format(image_num, image_row_coor, image_col_coor, col, row))
-        print("received kernel_num:{}, kernel_row_coor:{}, kernel_col_coor:{}, col:{}, row:{}".format(kernel_num, kernel_row_coor, kernel_col_coor, col, row))
+        # print("received image_num:{}, image_row_coor:{}, image_col_coor:{}, col:{}, row:{}".\
+        #               format(image_num, image_row_coor, image_col_coor, col, row))
+        # print("received kernel_num:{}, kernel_row_coor:{}, kernel_col_coor:{}, col:{}, row:{}".\
+        #               format(kernel_num, kernel_row_coor, kernel_col_coor, col, row))
+
         input_loc = self.get_ibuf_address_for_coordinates(image_num, image_row_coor, image_col_coor, col, row)
         weight_loc = self.get_wbuf_address_for_coordinates(kernel_num, kernel_row_coor, kernel_col_coor, col, row)
-        print("input:{} is present at {} and weight:{} is present at {}".format(inp, input_loc, weight,weight_loc))
+        # print("input:{} is present at {} and weight:{} is present at {}".format(inp, input_loc, weight,weight_loc))
+
+        cycle_name = "cycle"+str(cycle)
+        col_name = 'col'+str(col)
+        shift_combination = self.generate_bitBricks_usage_pattern(cycle_name, col_name, fu_name)
         for i in range(self.bitBrick_rows):
             for j in range(self.bitBrick_cols):
-                # TODO change to memory locations
+                bb_name = "BB_"+str(i)+"_"+str(j)
 
-                command = fu_name+":BB_"+str(i)+"_"+str(j)+":mul2: "+hex(input_loc)+"-"+str(6 - 2*i)+" "+hex(weight_loc)+"-"+str(j*2)
+                if shift_combination[i][j] == (-1,-1):
+                    continue
+                else:
+                    input_shift, weight_shift = shift_combination[i][j]
+                command = fu_name+":"+bb_name+":mul2: "+hex(input_loc)+"-"+str(input_shift)+" "+hex(weight_loc)+"-"+str(weight_shift)
                 # command = fu_name+":BB_"+str(i)+"_"+str(j)+":mul2: "+str(inp)+"-"+str(6 - 2*i)+" "+str(weight)+"-"+str(j*2)
                 print("command:"+command)
 
-                self.entire_sim_data['cycle'+str(cycle)]['col'+str(col)]['FU_'+str(row)+"_"+str(col)]['BB_'+str(i)+"_"+str(j)]\
-                    ['command'] = command
-                self.entire_sim_data['cycle'+str(cycle)]['col'+str(col)]['FU_'+str(row)+"_"+str(col)]['BB_'+str(i)+"_"+str(j)] \
-                    ['status'] = 'used'
+                self.entire_sim_data[cycle_name][col_name][fu_name][bb_name]['command'] = command
+                self.entire_sim_data[cycle_name][col_name][fu_name][bb_name]['status'] = 'used'
+
 
     def execGeneration(self):
         if len(self.input_image_shape) == 3:
@@ -364,6 +643,8 @@ class gen_op_code():
                                                    0, self.kernel, self.kernel_shape)
         else:
             assert 1 > 0, 'gen_opcode.py - execGeneration: unhandled case of input image shape'
+
+
 
     def execGeneration_for_each_image(self, image_num, input_single_image, input_single_image_shape, kernel_num, single_kernel, single_kernel_shape):
         # window_num = 0
@@ -408,18 +689,18 @@ if __name__ == "__main__":
     process = psutil.Process(os.getpid())
     print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
     # single image
-    # input_image = [[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]]
+    input_image = [[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]]
 
     # multiple grayscale images
-    input_image = [[[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]],\
-                   [[26,27,28,29,30], [31,32,33,34,35], [36,37,38,39,40], [41,42,43,44,45], [46,47,48,49,50]],\
-                   [[51,52,53,54,55], [56,57,58,59,60], [61,62,63,64,65], [66,67,68,69,70], [71,72,73,74,75]]]
+    # input_image = [[[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]],\
+    #                [[26,27,28,29,30], [31,32,33,34,35], [36,37,38,39,40], [41,42,43,44,45], [46,47,48,49,50]],\
+    #                [[51,52,53,54,55], [56,57,58,59,60], [61,62,63,64,65], [66,67,68,69,70], [71,72,73,74,75]]]
 
     input_image = np.array(input_image, dtype=int)
 
-    input_image = np.ones((10,28,28), dtype=int)
+    # input_image = np.ones((10,28,28), dtype=int)
     # kernel = np.array([[151,152,153], [154,155,156], [157,158,159]])
-    kernel = np.ones((4,3,3), dtype=int)
+    kernel = np.ones((1,4,4), dtype=int)
 
     padding = 0
 
@@ -437,7 +718,7 @@ if __name__ == "__main__":
     # print(input_image)
     # exit(2)
 
-    GOp = gen_op_code(input_image, kernel, (16,16), (4,4), 256, 128, 256)
+    GOp = gen_op_code(input_image, kernel, (4,4), (4,4), 256, 128, 256, 4, 6)
     GOp.add_new_cycle()
     #print(GOp.entire_sim_data)
     #print(json.dumps(GOp.entire_sim_data, indent=4))
@@ -446,7 +727,6 @@ if __name__ == "__main__":
     GOp.execGeneration()
     GOp.clear_cycle_from_sim_data('cycle'+str(GOp.cycles_used))
 
-    # TODO try taking buffer sizes into account, currently it is unlimited
     # TODO next use data in dicts to generate instructions
     # TODO next display per cycle interesting stats - like how many BBs were free
 
@@ -455,38 +735,3 @@ if __name__ == "__main__":
     print("cycles used:{}".format(GOp.cycles_used))
 
     print("memory taken by process in MB:{}".format(process.memory_info().rss/(1024*1024)))
-    '''
-# input_image = [[1,0,0,2,2],[0,2,0,1,2],[0,0,2,2,2],[1,1,2,1,1],[0,0,0,2,0]]
-input_image = [[1,2,3,4,5], [6,7,8,9,10], [11,12,13,14,15], [16,17,18,19,20], [21,22,23,24,25]]
-input_image = np.array(input_image, dtype=int)
-entire_sim_data = {}
-cycles_used = 0
-
-
-padding = 1
-
-print(input_image.shape)
-
-if padding == 1:
-    input_image = np.pad(input_image, (1,1), 'constant', constant_values=(0))
-    if len(input_image.shape) == 3:
-        shape = input_image.shape
-        input_image = input_image[1:(shape[2]-1),:,:]
-    elif len(input_image.shape) > 3:
-        assert len(input_image.shape) <= 3, 'error! padding would not be correct'
-
-print(input_image)
-
-kernel_1 = np.array([[51,52,53], [54,55,56], [57,58,49]])
-print(kernel_1)
-
-input_image_shape = input_image.shape
-kernel_1_shape = kernel_1.shape
-output_img = np.zeros((input_image_shape[0]-kernel_1_shape[0]+1, input_image_shape[1]-kernel_1_shape[1]+1))
-
-window_col_start = 0
-window_col_end = 0
-window_row_start = 0
-window_row_end = 0
-
-'''
