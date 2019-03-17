@@ -472,7 +472,7 @@ class gen_op_code():
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                      [(6, 0), (4, 0), (2, 0), (0, 0)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[4, 0],[0, 0]]
+                l1_shiftAdd_pattern = [[4, 0],[4, 0]]
         elif input_pair == (6, 8):
             shift_combination = [[(4, 2), (2, 2), (0, 2), (0, 0)],
                                  [(4, 4), (2, 4), (0, 4), (2, 0)],
@@ -834,7 +834,7 @@ class gen_op_code():
                         product = input_single_image[r_i + r_w][c_i + c_w] * single_kernel[r_w][c_w]
 
                         fu_assigned = ""
-                        if (self.inputQuantization != 6 and self.weightQuantization != 6):
+                        if (self.inputQuantization != 6 or self.weightQuantization != 6):
                             cycle_assigned, col_assigned, row_assigned = self.get_usable_fusion_unit(col_assigned, self.window_num)
                             fu_assigned = 'FU_' + str(row_assigned) + "_" + str(col_assigned)
                             self.assign_prod_to_fusionUnit(image_num, r_i + r_w, c_i + c_w, cycle_assigned, col_assigned, row_assigned,\
