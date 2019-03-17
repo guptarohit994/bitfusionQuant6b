@@ -3,9 +3,10 @@ from memory import *
 from fusionUnit import *
 import utils as utils
 from shiftAdd import *
+from pprint import pprint
 
 class fusionUnitWrapper():
-    def __init__(self):
+    def __init__(self, ibuf_size, wbuf_size, obuf_size):
         # TODO decide how many fusion unit should be there in a row
         self.fuRows = 16
         self.fuCols = 16
@@ -13,6 +14,10 @@ class fusionUnitWrapper():
         self.fuData = {}
         # stores obj of obuf of a column
         self.obuf_obj = []
+        self.obufSize = obuf_size
+
+        self.ibufSize = ibuf_size
+        self.wbufSize = wbuf_size
         # which addr to store the output of level2 add in obuf
         self.obuf_write_addr = []
         self.commands = []
@@ -21,14 +26,15 @@ class fusionUnitWrapper():
         # stores objs of adders of each column
         self.shiftAdd_l2_objs = []
 
+
         for i in range(self.fuRows):
             for j in range(self.fuCols):
                 fu_name = "FU_"+str(i)+"_"+str(j)
                 fu_wbuf_name = 'WBUF_'+str(i)+"_"+str(j)
                 fu_ibuf_name = 'IBUF_'+str(i)+"_"+str(j)
 
-                fu_ibuf_obj = memory(fu_ibuf_name, 1024)
-                fu_wbuf_obj = memory(fu_wbuf_name, 1024)
+                fu_ibuf_obj = memory(fu_ibuf_name, self.ibufSize)
+                fu_wbuf_obj = memory(fu_wbuf_name, self.wbufSize)
                 fu_obj = fusionUnit(fu_name, fu_ibuf_name, fu_ibuf_obj,\
                                     fu_wbuf_name, fu_wbuf_obj, 2)
 
@@ -47,7 +53,7 @@ class fusionUnitWrapper():
             self.shiftAdd_l2_objs.append(col_sa_obj)
 
             obuf_name = 'OBUF_x_'+str(j)
-            obuf_obj = memory(obuf_name, 1024)
+            obuf_obj = memory(obuf_name, self.obufSize)
             self.obuf_obj.append(obuf_obj)
             self.obuf_write_addr.append(-1)
 
@@ -73,10 +79,19 @@ class fusionUnitWrapper():
             command_blocks[1] += ":"+command_blocks.pop(2)
             pattern = re.compile('^FU_(\d+)_(\d+)$')
             matches = pattern.match(command_blocks[0])
-            assert matches, 'fusionUnitWrapper - malformed target FF name received'
+            assert matches, 'fusionUnitWrapper - malformed target FU name received'
 
             # return [<BB row num> <BB col num> <op> <memLoc of operand1> <memLoc of operand2>]
             return [command_type, matches.group(1), matches.group(2)] + command_blocks[1:]
+        elif "shconfig" in command:
+            command_type = 'l1_shiftAdd_config'
+            command_blocks = command.split(":")
+            assert len(command_blocks) == 2, 'fusionUnitWrapper - maformed shconfig command received'
+            pattern = re.compile('^FU_(\d+)_(\d+)$')
+            matches = pattern.match(command_blocks[0])
+            assert matches, 'fusionUnitWrapper - malformed target FU name received'
+
+            return [command_type, matches.group(1), matches.group(2), command_blocks[1]]
         else:
             assert 0 > 1, 'fusionUnitWrapper - command not yet handled'
 
@@ -92,25 +107,27 @@ class fusionUnitWrapper():
             command_type = command_blocks.pop(0)
 
             if command_type == 'comment':
-                return 0
+                continue
             elif command_type == 'staddr':
                 col = int(command_blocks[0])
                 addr = int('0x'+command_blocks[1], 16)
                 self.obuf_write_addr[col] = addr
-                return 0
-            elif command_type == 'mul2':
+                continue
+            elif command_type in ['mul2', 'l1_shiftAdd_config']:
                 fu_row = command_blocks[0]
                 fu_col = command_blocks[1]
                 fu_command = command_blocks[2]
 
                 self.fuData[utils.getNameString('FU',fu_row,fu_col)]['fu_obj'].addCommand(fu_command)
+                self.fuData[utils.getNameString('FU', fu_row, fu_col)]['fu_obj'].sendCommand()
             else:
                 assert 0 > 1, 'fusionUnitWrapper - command not yet handled'
 
-        if command_type == 'mul2':
-            for i in range(self.fuRows):
-                for j in range(self.fuCols):
-                    self.fuData[utils.getNameString('FU', i, j)]['fu_obj'].sendCommand()
+        # if command_type == 'mul2':
+        #     print("rohit")
+        #     for i in range(self.fuRows):
+        #         for j in range(self.fuCols):
+        #             self.fuData[utils.getNameString('FU', i, j)]['fu_obj'].sendCommand()
 
     def execCommand(self):
         for i in range(self.fuRows):
@@ -123,6 +140,7 @@ class fusionUnitWrapper():
 
             if len(self.shiftAdd_l2_objs[j].outputs) != 0:
                 assert self.obuf_write_addr[j] != -1, 'fusionUnitWrapper - write address of this obuf is wrong'
+                print(self.shiftAdd_l2_objs[j].outputs)
                 self.obuf_obj[j].store_mem(self.obuf_write_addr[j], \
                                            utils.align_num_to_byte(self.shiftAdd_l2_objs[j].outputs.pop(0)))
 
@@ -135,10 +153,29 @@ class fusionUnitWrapper():
                 self.fuData[utils.getNameString('FU',i,j)]['fu_obj'].getBusyBitBricks()
 
 if __name__ == "__main__":
-    DD = fusionUnitWrapper()
+    DD = fusionUnitWrapper(256, 128, 256)
     #with open('instr.txt') as f:
     #    command = f.read().splitlines()
-    command = ["staddr OBUF_x_0 0x0", "FU_0_0:BB_1_1:mul2 0x0-4 0x0-2", "staddr OBUF_x_1 0x0", "FU_15_1:BB_1_1:mul2 0x0-4 0x0-2"]
+    command = ["staddr OBUF_x_0 0x10",
+               "FU_0_0:shconfig 0 0 0 0",
+               "FU_0_0:BB_0_0:mul2 0x0-6 0x0-0",
+               "FU_0_0:BB_0_1:mul2 0x0-6 0x0-2",
+               "FU_0_0:BB_0_2:mul2 0x0-6 0x0-4",
+               "FU_0_0:BB_0_3:mul2 0x0-6 0x0-6",
+               "FU_0_0:BB_1_0:mul2 0x0-4 0x0-0",
+               "FU_0_0:BB_1_1:mul2 0x0-4 0x0-2",
+               "FU_0_0:BB_1_2:mul2 0x0-4 0x0-4",
+               "FU_0_0:BB_1_3:mul2 0x0-4 0x0-6",
+               "FU_0_0:BB_2_0:mul2 0x0-2 0x0-0",
+               "FU_0_0:BB_2_1:mul2 0x0-2 0x0-2",
+               "FU_0_0:BB_2_2:mul2 0x0-2 0x0-4",
+               "FU_0_0:BB_2_3:mul2 0x0-2 0x0-6",
+               "FU_0_0:BB_3_0:mul2 0x0-0 0x0-0",
+               "FU_0_0:BB_3_1:mul2 0x0-0 0x0-2",
+               "FU_0_0:BB_3_2:mul2 0x0-0 0x0-4",
+               "FU_0_0:BB_3_3:mul2 0x0-0 0x0-6",
+               "staddr OBUF_x_1 0x0",
+               "FU_15_1:BB_1_1:mul2 0x0-4 0x0-2"]
     DD.fuData[utils.getNameString('FU',0,0)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
     DD.fuData[utils.getNameString('FU',0,0)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
     DD.fuData[utils.getNameString('FU',15,1)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])

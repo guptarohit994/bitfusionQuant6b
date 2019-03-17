@@ -18,6 +18,10 @@ class shiftAdd():
         # fu_name in case of level 0 and 1 and colName in level 2
         self.fuName = parent_name
         self.status = 'free'
+        # shift amounts are represented here in format
+        # [[shift for 0_0, shift_for_0_1],
+        #  [shift_for 1_0, shift_for_1_1]]
+        self.level1_shifts = [[4,0],[8,4]]
 
     def execShiftAdd(self):
         assert len(self.inputObjs) == 2, 'shiftAdd - expecting inputObjs to be arranged as matrix'
@@ -27,17 +31,31 @@ class shiftAdd():
                                        len(self.inputObjs[1][0].outputs))
         output = [0 for x in range(max_len_output_inputObjs)]
 
-        for x in range(len(self.inputObjs[0][1].outputs)):
-            output[x] += (self.inputObjs[0][1].outputs.pop(0) << 0)
+        if self.shiftAddLevel == 0:
+            for x in range(len(self.inputObjs[0][1].outputs)):
+                output[x] += (self.inputObjs[0][1].outputs.pop(0) << 0)
 
-        for x in range(len(self.inputObjs[0][0].outputs)):
-            output[x] += (self.inputObjs[0][0].outputs.pop(0) << (2 + self.shiftAddLevel*2))
+            for x in range(len(self.inputObjs[0][0].outputs)):
+                output[x] += (self.inputObjs[0][0].outputs.pop(0) << 2)
 
-        for x in range(len(self.inputObjs[1][1].outputs)):
-            output[x] += (self.inputObjs[1][1].outputs.pop(0) << (2 + self.shiftAddLevel*2))
+            for x in range(len(self.inputObjs[1][1].outputs)):
+                output[x] += (self.inputObjs[1][1].outputs.pop(0) << 2)
 
-        for x in range(len(self.inputObjs[1][0].outputs)):
-            output[x] += (self.inputObjs[1][0].outputs.pop(0) << (4 + self.shiftAddLevel*4))
+            for x in range(len(self.inputObjs[1][0].outputs)):
+                output[x] += (self.inputObjs[1][0].outputs.pop(0) << 4)
+        elif self.shiftAddLevel == 1:
+            for x in range(len(self.inputObjs[0][1].outputs)):
+                output[x] += (self.inputObjs[0][1].outputs.pop(0) << self.level1_shifts[0][1])
+
+            for x in range(len(self.inputObjs[0][0].outputs)):
+                output[x] += (self.inputObjs[0][0].outputs.pop(0) << self.level1_shifts[0][0])
+
+            for x in range(len(self.inputObjs[1][1].outputs)):
+                output[x] += (self.inputObjs[1][1].outputs.pop(0) << self.level1_shifts[1][1])
+
+            for x in range(len(self.inputObjs[1][0].outputs)):
+                output[x] += (self.inputObjs[1][0].outputs.pop(0) << self.level1_shifts[1][0])
+
 
         self.outputs = output
         self.status = 'complete'

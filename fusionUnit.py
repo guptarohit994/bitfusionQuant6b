@@ -69,19 +69,29 @@ class fusionUnit():
 
     # BB_0_1:mul2 A/N 0x400
     def parseCommand(self, command):
-        command_blocks = command.split(':')
-        assert len(command_blocks) == 2, 'fusionUnit - malformed command received'
-        pattern = re.compile('^BB_(\d+)_(\d+)$')
-        matches = pattern.match(command_blocks[0])
-        assert matches, 'fusionUnit - malformed target BB name received'
+        command_type = ""
+        if "shconfig" in command:
+            command_type = "l1_shiftAdd_config"
+            command_blocks = command.split()
+            assert command_blocks[0] == 'shconfig', 'fusionUnit - misleading shconfig command received'
+            l1_shiftAdd_pattern_list = [[int(command_blocks[1]), int(command_blocks[2])],
+                                        [int(command_blocks[3]), int(command_blocks[4])]]
+            return [command_type, l1_shiftAdd_pattern_list]
+        elif "mul2" in command:
+            command_type = 'mul2'
+            command_blocks = command.split(':')
+            assert len(command_blocks) == 2, 'fusionUnit - malformed command received'
+            pattern = re.compile('^BB_(\d+)_(\d+)$')
+            matches = pattern.match(command_blocks[0])
+            assert matches, 'fusionUnit - malformed target BB name received'
 
-        bb_command = command_blocks.pop(1).split()
-        assert len(bb_command) == 3, 'fusionUnit - malformed command for bitBrick received'
-        command_blocks.append(bb_command[0])
-        command_blocks.append(bb_command[1])
-        command_blocks.append(bb_command[2])
-        # return [<BB row num> <BB col num> <op> <memLoc of operand1> <memLoc of operand2>]
-        return [matches.group(1), matches.group(2)] + command_blocks[1:]
+            bb_command = command_blocks.pop(1).split()
+            assert len(bb_command) == 3, 'fusionUnit - malformed command for bitBrick received'
+            command_blocks.append(bb_command[0])
+            command_blocks.append(bb_command[1])
+            command_blocks.append(bb_command[2])
+            # return [<BB row num> <BB col num> <op> <memLoc of operand1> <memLoc of operand2>]
+            return [command_type, matches.group(1), matches.group(2)] + command_blocks[1:]
 
 
     def sendCommand(self):
@@ -93,47 +103,51 @@ class fusionUnit():
 
         while len(self.commands) !=0:
             command_blocks = self.parseCommand(self.commands.pop(0))
-            bb_row = int(command_blocks[0])
-            bb_col = int(command_blocks[1])
-            bb_op = command_blocks[2]
+            command_type = command_blocks.pop(0)
+            if command_type == 'l1_shiftAdd_config':
+                self.shiftAddList_l1[0].level1_shifts = command_blocks[0]
+            elif command_type == 'mul2':
+                bb_row = int(command_blocks[0])
+                bb_col = int(command_blocks[1])
+                bb_op = command_blocks[2]
 
-            ibuf_byte = command_blocks[3].split('-') #of the form '0x400-2'
-            ibuf_bit_start = int(ibuf_byte[1])
-            ibuf_byte = int(ibuf_byte[0], 16) #of the form '0x400'
+                ibuf_byte = command_blocks[3].split('-') #of the form '0x400-2'
+                ibuf_bit_start = int(ibuf_byte[1])
+                ibuf_byte = int(ibuf_byte[0], 16) #of the form '0x400'
 
-            wbuf_byte = command_blocks[4].split('-') #of the form '0x400-2'
-            wbuf_bit_start = int(wbuf_byte[1])
-            wbuf_byte = int(wbuf_byte[0], 16) #of the form '0x400'
+                wbuf_byte = command_blocks[4].split('-') #of the form '0x400-2'
+                wbuf_bit_start = int(wbuf_byte[1])
+                wbuf_byte = int(wbuf_byte[0], 16) #of the form '0x400'
 
-            if ibuf_byte not in ibuf_data.keys():
-                ibuf_data[ibuf_byte] = self.iBufObj.load_mem(ibuf_byte, 1)[0]
+                if ibuf_byte not in ibuf_data.keys():
+                    ibuf_data[ibuf_byte] = self.iBufObj.load_mem(ibuf_byte, 1)[0]
 
-            if wbuf_byte not in wbuf_data.keys():
-                wbuf_data[wbuf_byte] = self.wBufObj.load_mem(wbuf_byte, 1)[0]
+                if wbuf_byte not in wbuf_data.keys():
+                    wbuf_data[wbuf_byte] = self.wBufObj.load_mem(wbuf_byte, 1)[0]
 
-            ibuf_operand = 0
-            if (ibuf_bit_start + self.bitWidth - 1) <= 8:
-                ibuf_operand = ((ibuf_data[ibuf_byte] << ibuf_bit_start) & 0xff) >> (8 - self.bitWidth)
-            else:
-                if (ibuf_byte + 1) not in ibuf_data.keys():
-                    ibuf_data[ibuf_byte+1] = self.iBufObj.load_mem(ibuf_byte+1, 1)[0]
+                ibuf_operand = 0
+                if (ibuf_bit_start + self.bitWidth - 1) <= 8:
+                    ibuf_operand = ((ibuf_data[ibuf_byte] << ibuf_bit_start) & 0xff) >> (8 - self.bitWidth)
+                else:
+                    if (ibuf_byte + 1) not in ibuf_data.keys():
+                        ibuf_data[ibuf_byte+1] = self.iBufObj.load_mem(ibuf_byte+1, 1)[0]
 
-                ibuf_operand = ((ibuf_data[ibuf_byte]  << ibuf_bit_start) & 0xff) >> ibuf_bit_start
-                ibuf_operand = ibuf_operand << (self.bitWidth - 8 + ibuf_bit_start)
-                ibuf_operand = ibuf_operand | (ibuf_data[ibuf_byte+1] >> (8 - self.bitWidth + (8 - ibuf_bit_start)))
+                    ibuf_operand = ((ibuf_data[ibuf_byte]  << ibuf_bit_start) & 0xff) >> ibuf_bit_start
+                    ibuf_operand = ibuf_operand << (self.bitWidth - 8 + ibuf_bit_start)
+                    ibuf_operand = ibuf_operand | (ibuf_data[ibuf_byte+1] >> (8 - self.bitWidth + (8 - ibuf_bit_start)))
 
-            wbuf_operand = 0
-            if (wbuf_bit_start + self.bitWidth - 1) <= 8:
-                wbuf_operand = ((wbuf_data[wbuf_byte] << wbuf_bit_start) & 0xff) >> (8 - self.bitWidth)
-            else:
-                if (wbuf_byte + 1) not in wbuf_data.keys():
-                    wbuf_data[wbuf_byte+1] = self.wBufObj.load_mem(wbuf_byte+1, 1)[0]
+                wbuf_operand = 0
+                if (wbuf_bit_start + self.bitWidth - 1) <= 8:
+                    wbuf_operand = ((wbuf_data[wbuf_byte] << wbuf_bit_start) & 0xff) >> (8 - self.bitWidth)
+                else:
+                    if (wbuf_byte + 1) not in wbuf_data.keys():
+                        wbuf_data[wbuf_byte+1] = self.wBufObj.load_mem(wbuf_byte+1, 1)[0]
 
-                wbuf_operand = ((wbuf_data[wbuf_byte]  << wbuf_bit_start) & 0xff) >> wbuf_bit_start
-                wbuf_operand = wbuf_operand << (self.bitWidth - 8 + wbuf_bit_start)
-                wbuf_operand = wbuf_operand | (wbuf_data[wbuf_byte+1] >> (8 - self.bitWidth + (8 - wbuf_bit_start)))
+                    wbuf_operand = ((wbuf_data[wbuf_byte]  << wbuf_bit_start) & 0xff) >> wbuf_bit_start
+                    wbuf_operand = wbuf_operand << (self.bitWidth - 8 + wbuf_bit_start)
+                    wbuf_operand = wbuf_operand | (wbuf_data[wbuf_byte+1] >> (8 - self.bitWidth + (8 - wbuf_bit_start)))
 
-            self.BB_list[bb_row][bb_col].addCommand(bb_op + " " + str(ibuf_operand) + " " + str(wbuf_operand))
+                self.BB_list[bb_row][bb_col].addCommand(bb_op + " " + str(ibuf_operand) + " " + str(wbuf_operand))
 
     # executes the commands in bitBrick and they are now placed in it's output
     def execCommand(self):
