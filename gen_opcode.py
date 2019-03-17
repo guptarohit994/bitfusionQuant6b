@@ -203,22 +203,22 @@ class gen_op_code():
                 return 'used'
         elif pair_value in [(8,4), (4,8), (8,2), (2,8), (6,4), (4,6)]:
             if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
-                return 'bottom_used'
-            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_used':
+                return 'top_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_used':
                 return 'used'
         elif pair_value in [(6,6)]:
             if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
-                return 'top_left_used'
-            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_left_used':
+                return 'bottom_right_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_right_used':
                 return 'used'
         elif pair_value in [(6,2), (2,6), (4,4), (4,2), (2,2)]:
             if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
-                return 'bottom_left_used'
-            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_left_used':
-                return 'bottom_used'
-            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_used':
-                return 'top_left_used'
-            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_left_used':
+                return 'top_right_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_right_used':
+                return 'top_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_used':
+                return 'bottom_right_used'
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_right_used':
                 return 'used'
 
     def get_usable_fusion_unit_6_6(self, col, window_num):
@@ -228,17 +228,17 @@ class gen_op_code():
         col_name = 'col'+str(col_copy)
 
         count_free_fusionUnits = 0
-        count_top_left_used_fusionUnits = 0
+        count_bottom_right_used_fusionUnits = 0
         for rowNum in range(self.bitFusion_rows):
             fu_name = 'FU_'+str(rowNum)+"_"+str(col_copy)
             if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
                 count_free_fusionUnits += 1
-            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_left_used':
-                count_top_left_used_fusionUnits += 1
+            elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_right_used':
+                count_bottom_right_used_fusionUnits += 1
 
-        # print("get_usable_fusion_unit_6_6: count_free_fusionUnits:{}, count_top_left_used_fusionUnits:{}".format(count_free_fusionUnits, count_top_left_used_fusionUnits))
+        # print("get_usable_fusion_unit_6_6: count_free_fusionUnits:{}, count_bottom_right_used_fusionUnits:{}".format(count_free_fusionUnits, count_bottom_right_used_fusionUnits))
         # request a new fusion unit
-        if count_free_fusionUnits == 0 and count_top_left_used_fusionUnits < 3:
+        if count_free_fusionUnits == 0 and count_bottom_right_used_fusionUnits < 3:
             cur_cycle, col_copy = self.get_usable_bitfusion_col(window_num)
             cycle_name = 'cycle' + str(cur_cycle)
             col_name = 'col' + str(col_copy)
@@ -249,13 +249,13 @@ class gen_op_code():
                 if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
                     count_free_fusionUnits += 1
 
-        count_top_left_used = 0
+        count_bottom_right_used = 0
         for rowNum in range(self.bitFusion_rows):
             fu_name = 'FU_'+str(rowNum)+"_"+str(col_copy)
 
-            if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'top_left_used':
-                count_top_left_used += 1
-                if count_top_left_used == 3:
+            if self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'bottom_right_used':
+                count_bottom_right_used += 1
+                if count_bottom_right_used == 3:
                     # use the top three FUs
                     # set their status from top_left_used to used
                     row_nums = [(rowNum-x) for x in range(3)]
@@ -263,7 +263,6 @@ class gen_op_code():
                         self.entire_sim_data[cycle_name][col_name]['FU_'+str(prev_row)+"_"+str(col_copy)]['status'] = \
                             self.get_fusion_unit_status_from_quantization(cur_cycle, col_copy, 'FU_'+str(prev_row)+"_"+str(col_copy))
 
-                    # TODO emit an instruction for changing the shift amount
                     return cur_cycle, col_copy, row_nums
             elif self.entire_sim_data[cycle_name][col_name][fu_name]['status'] == 'free':
                 if count_free_fusionUnits >= (3 - count_free_fusionUnits):
@@ -275,7 +274,7 @@ class gen_op_code():
 
 
     # when quantized to sub-byte levels, order of filling a bitBrick is
-    # bottom_left -> bottom-right -> top-left -> top-right
+    # top_right -> top_left -> bottom_right -> bottom_left
     def get_usable_fusion_unit(self, col, window_num):
         cur_cycle = self.cycles_used
         cycle_name = 'cycle'+str(cur_cycle)
@@ -436,7 +435,7 @@ class gen_op_code():
         input_pair = (self.inputQuantization, self.weightQuantization)
         status = self.entire_sim_data[cycle_name][col_name][fu_name]['status']
         # print("cycle_name:{}, col_name:{}, fu_name:{}, special_6_6:{}, status:{}".format(cycle_name, col_name, fu_name,special_6_6, status))
-        assert status in ['free', 'top_left_used', 'bottom_used', 'bottom_left_used', 'used'], 'gen_opcode.py - illegal FU status found'
+        assert status in ['free', 'top_right_used', 'top_used', 'bottom_right_used', 'used'], 'gen_opcode.py - illegal FU status found'
         shift_combination = [[0 for x in range(self.bitBrick_cols)] for y in range(self.bitBrick_rows)]
         l1_shiftAdd_pattern = [[0, 0],[0, 0]]
         if input_pair == (8, 8):
@@ -445,268 +444,268 @@ class gen_op_code():
                                  [(4, 6), (4, 4), (4, 2), (4, 0)],
                                  [(6, 6), (6, 4), (6, 2), (6, 0)]]
         elif input_pair == (8, 6):
-            shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                 [(2, 6), (0, 6), (0, 4), (0, 2)],
-                                 [(4, 6), (4, 4), (2, 4), (2, 2)],
-                                 [(6, 6), (6, 4), (6, 2), (4, 2)]]
+            shift_combination = [[(6, 0), (4, 0), (2, 0), (0, 0)],
+                                 [(6, 2), (4, 2), (2, 2), (0, 2)],
+                                 [(6, 4), (4, 4), (2, 4), (0, 4)],
+                                 [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
         elif input_pair == (8, 4):
-            if status == 'bottom_used':
+            if status == 'top_used':
+                shift_combination = [[(6, 0), (4, 0), (2, 0), (0, 0)],
+                                    [(6, 2), (4, 2), (2, 2), (0, 2)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 0]]
+            elif status == 'used':
                 shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(4, 6), (2, 6), (0, 6), (0, 4)],
-                                    [(6, 6), (6, 4), (4, 4), (2, 4)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 4]]
-            elif status == 'used':
-                shift_combination = [[(4, 6), (2, 6), (0, 6), (0, 4)],
-                                     [(6, 6), (6, 4), (4, 4), (2, 4)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 4],[8, 4]]
+                                    [(6, 0), (4, 0), (2, 0), (0, 0)],
+                                    [(6, 2), (4, 2), (2, 2), (0, 2)]]
+                l1_shiftAdd_pattern = [[4, 0],[4, 0]]
         elif input_pair == (8, 2):
-            if status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+            if status == 'top_used':
+                shift_combination = [[(6, 0), (4, 0), (2, 0), (0, 0)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (4, 6), (2, 6), (0, 6)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 4]]
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 0]]
             elif status == 'used':
                 shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (4, 6), (2, 6), (0, 6)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(6, 0), (4, 0), (2, 0), (0, 0)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 4],[8, 4]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 0]]
         elif input_pair == (6, 8):
-            shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                 [(2, 6), (2, 4), (2, 2), (2, 0)],
-                                 [(4, 6), (4, 4), (4, 2), (4, 0)],
-                                 [(6, 6), (6, 4), (6, 2), (6, 0)]]
+            shift_combination = [[(4, 2), (2, 2), (0, 2), (0, 0)],
+                                 [(4, 4), (2, 4), (0, 4), (2, 0)],
+                                 [(4, 6), (2, 6), (0, 6), (4, 0)],
+                                 [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
         elif input_pair == (6, 6):
-            if (status == 'used' and special_6_6 == 0) or status == 'top_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(2, 6), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(4, 6), (4, 4), (2, 4), (2, 2)],
-                                    [(6, 6), (6, 4), (6, 2), (4, 2)]]
-                l1_shiftAdd_pattern = [[4, 0],[8, 4]]
+            if (status == 'used' and special_6_6 == 0) or status == 'bottom_right_used':
+                shift_combination = [[(2, 4), (0, 4), (0, 2), (0, 0)],
+                                    [(4, 4), (4, 2), (2, 2), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (4, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 4]]
             elif status == 'used' and special_6_6 == 1:
-                shift_combination = [[(-1, -1), (-1, -1), (4, 6), (4, 4)],
-                                     [(-1, -1), (-1, -1), (6, 6), (6, 4)],
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[4, 8],[8, 4]]
+                                     [(0, 2), (0, 0), (-1, -1), (-1, -1)],
+                                     [(2, 2), (2, 0), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 4]]
             elif status == 'used' and special_6_6 == 2:
-                shift_combination = [[(-1, -1), (-1, -1), (2, 4), (2, 2)],
-                                     [(-1, -1), (-1, -1), (6, 2), (4, 2)],
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[4, 4],[8, 4]]
+                                     [(2, 4), (0, 4), (-1, -1), (-1, -1)],
+                                     [(4, 4), (4, 2), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[4, 4]]
             elif status == 'used' and special_6_6 == 3:
                 shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (2, 6), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (4, 0), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[4, 4],[8, 4]]
+                l1_shiftAdd_pattern = [[4, 0],[4, 4]]
         elif input_pair == (6, 4):
-            if status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+            if status == 'top_used':
+                shift_combination = [[(-1, -1), (2, 2), (0, 2), (0, 0)],
+                                    [(-1, -1), (4, 2), (4, 0), (2, 0)],
                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(4, 6), (2, 6), (-1, -1), (-1, -1)],
-                                    [(6, 6), (6, 4), (4, 4), (2, 4)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 4]]
-            elif status == 'used':
-                shift_combination = [[(4, 6), (2, 6), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (4, 4), (2, 4)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 4],[8, 4]]
-        elif input_pair == (6, 2):
-            if status == 'bottom_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(-1, -1), (2, 6), (-1, -1), (-1, -1)],
-                                    [(6, 6), (4, 6), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 0]]
-            elif status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (2, 6)],
-                                     [(-1, -1), (-1, -1), (6, 6), (4, 6)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 8]]
-            elif status == 'top_left_used':
-                shift_combination = [[(-1, -1), (2, 6), (-1, -1), (-1, -1)],
-                                     [(6, 6), (4, 6), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 0],[8, 8]]
-            elif status == 'used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (2, 6)],
-                                     [(-1, -1), (-1, -1), (6, 6), (4, 6)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 8],[8, 8]]
-        elif input_pair == (4, 8):
-            if status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(4, 6), (4, 4), (4, 2), (4, 0)],
-                                     [(6, 6), (6, 4), (6, 2), (6, 0)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 4]]
-            elif status == 'used':
-                shift_combination = [[(4, 6), (4, 4), (4, 2), (4, 0)],
-                                     [(6, 6), (6, 4), (6, 2), (6, 0)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 4],[8, 4]]
-        elif input_pair == (4, 6):
-            if status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(4, 6), (4, 4), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (6, 2), (4, 2)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 4]]
-            elif status == 'used':
-                shift_combination = [[(4, 6), (4, 4), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (6, 2), (4, 2)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 4],[8, 4]]
-        elif input_pair == (4, 4):
-            if status == 'bottom_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(4, 6), (4, 4), (-1, -1), (-1, -1)],
-                                    [(6, 6), (6, 4), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 0]]
-            elif status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (4, 6), (4, 4)],
-                                     [(-1, -1), (-1, -1), (6, 6), (6, 4)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 8]]
-            elif status == 'top_left_used':
-                shift_combination = [[(4, 6), (4, 4), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 0],[8, 8]]
-            elif status == 'used':
-                shift_combination = [[(-1, -1), (-1, -1), (4, 6), (4, 4)],
-                                     [(-1, -1), (-1, -1), (6, 6), (6, 4)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 8],[8, 8]]
-        elif input_pair == (4, 2):
-            if status == 'bottom_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (4, 6), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 0]]
-            elif status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (6, 6), (4, 6)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 8]]
-            elif status == 'top_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (4, 6), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 0],[8, 8]]
-            elif status == 'used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (6, 6), (4, 6)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 8],[8, 8]]
-        elif input_pair == (2, 8):
-            if status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (6, 2), (6, 0)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 4]]
-            elif status == 'used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (6, 2), (6, 0)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 4],[8, 4]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 0]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (2, 2), (0, 2), (0, 0)],
+                                     [(-1, -1), (4, 2), (4, 0), (2, 0)]]
+                l1_shiftAdd_pattern = [[4, 0],[4, 0]]
+        elif input_pair == (6, 2):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                    [(-1, -1), (-1, -1), (4, 0), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0,0), (-1, -1), (-1, -1)],
+                                     [(4, 0), (2, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (4, 0), (2, 0)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(4, 0), (2, 0), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+        elif input_pair == (4, 8):
+            if status == 'top_used':
+                shift_combination = [[(2, 4), (0, 4), (0, 2), (0, 0)],
+                                     [(2, 6), (0, 6), (2, 2), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 0]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(2, 4), (0, 4), (0, 2), (0, 0)],
+                                     [(2, 6), (0, 6), (2, 2), (2, 0)]]
+                l1_shiftAdd_pattern = [[4, 0],[4, 0]]
+        elif input_pair == (4, 6):
+            if status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 4), (0, 2), (0, 0)],
+                                    [(-1, -1), (2, 4), (2, 2), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 0]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 4), (0, 2), (0, 0)],
+                                     [(-1, -1), (2, 4), (2, 2), (2, 0)]]
+                l1_shiftAdd_pattern = [[4, 0],[4, 0]]
+        elif input_pair == (4, 4):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (0, 2), (0, 0)],
+                                    [(-1, -1), (-1, -1), (2, 2), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'top_used':
+                shift_combination = [[(0, 2), (0, 0), (-1, -1), (-1, -1)],
+                                     [(2, 2), (2, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (0, 2), (0, 0)],
+                                     [(-1, -1), (-1, -1), (2, 2), (2, 0)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(0, 2), (0, 0), (-1, -1), (-1, -1)],
+                                     [(2, 2), (2, 0), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+        elif input_pair == (4, 2):
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (2, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (2, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (2, 0)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (2, 0), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+        elif input_pair == (2, 8):
+            if status == 'top_used':
+                shift_combination = [[(0, 6), (0, 4), (0, 2), (0, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[0, 0]]
+            elif status == 'used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(0, 6), (0, 4), (0, 2), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[4, 0],[4, 0]]
         elif input_pair == (2, 6):
-            if status == 'bottom_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (6, 2), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 0]]
-            elif status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (6, 2)],
-                                     [(-1, -1), (-1, -1), (6, 6), (6, 4)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 8]]
-            elif status == 'top_left_used':
-                shift_combination = [[(-1, -1), (6, 2), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (-1, -1), (-1, -1)],
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (0, 4), (0, 2)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 0],[8, 8]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(0, 4), (0, 2), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (0, 4), (0, 2)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
             elif status == 'used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (6, 2)],
-                                     [(-1, -1), (-1, -1), (6, 6), (6, 4)],
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 8],[8, 8]]
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(0, 4), (0, 2), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
         elif input_pair == (2, 4):
-            if status == 'bottom_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 0]]
-            elif status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (6, 6), (6, 4)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 8]]
-            elif status == 'top_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (6, 4), (-1, -1), (-1, -1)],
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (0, 2)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 2), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 0],[8, 8]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 2)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
             elif status == 'used':
                 shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (6, 6), (6, 4)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 8],[8, 8]]
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 2), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
         elif input_pair == (2, 2):
-            if status == 'bottom_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+            if status == 'top_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                    [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'top_used':
+                shift_combination = [[(-1, -1), (0, 0), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 0]]
-            elif status == 'bottom_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (6, 6), (-1, -1)]]
-                l1_shiftAdd_pattern = [[0, 0],[8, 8]]
-            elif status == 'top_left_used':
-                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(6, 6), (-1, -1), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 0],[8, 8]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+            elif status == 'bottom_right_used':
+                shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (0, 0)],
+                                     [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
             elif status == 'used':
                 shift_combination = [[(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
-                                     [(-1, -1), (-1, -1), (6, 6), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)],
+                                     [(-1, -1), (0, 0), (-1, -1), (-1, -1)],
                                      [(-1, -1), (-1, -1), (-1, -1), (-1, -1)]]
-                l1_shiftAdd_pattern = [[8, 8],[8, 8]]
+                l1_shiftAdd_pattern = [[0, 0],[0, 0]]
         else:
             assert 0 > 1, 'gen_opcode.py - unsupported quantization pair found'
         return l1_shiftAdd_pattern, shift_combination
