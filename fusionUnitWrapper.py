@@ -8,8 +8,8 @@ from pprint import pprint
 class fusionUnitWrapper():
     def __init__(self, ibuf_size, wbuf_size, obuf_size):
         # TODO decide how many fusion unit should be there in a row
-        self.fuRows = 16
-        self.fuCols = 16
+        self.fuRows = 4
+        self.fuCols = 4
 
         self.fuData = {}
         # stores obj of obuf of a column
@@ -35,8 +35,8 @@ class fusionUnitWrapper():
 
                 fu_ibuf_obj = memory(fu_ibuf_name, self.ibufSize)
                 fu_wbuf_obj = memory(fu_wbuf_name, self.wbufSize)
-                fu_obj = fusionUnit(fu_name, fu_ibuf_name, fu_ibuf_obj,\
-                                    fu_wbuf_name, fu_wbuf_obj, 2)
+                fu_obj = fusionUnit(fu_name, fu_wbuf_name, fu_wbuf_obj,\
+                                    fu_ibuf_name, fu_ibuf_obj, 2)
 
                 self.fuData[fu_name] = {}
                 self.fuData[fu_name]['fu_obj'] = fu_obj
@@ -60,7 +60,6 @@ class fusionUnitWrapper():
     # FU_0_1:BB_0_1:mul2 0x400-0 0x420-0
     # staddr obuf_x_0 0x400
     def parseCommand(self, command):
-        print(command)
         command_type = ""
         if re.match('^#', command) is not None:
             command_type = 'comment'
@@ -75,6 +74,7 @@ class fusionUnitWrapper():
         elif "mul2" in command:
             command_type = 'mul2'
             command_blocks = command.split(':')
+            print(command)
             assert len(command_blocks) == 3, 'fusionUnitWrapper - malformed command received'
             command_blocks[1] += ":"+command_blocks.pop(2)
             pattern = re.compile('^FU_(\d+)_(\d+)$')
@@ -154,32 +154,41 @@ class fusionUnitWrapper():
 
 if __name__ == "__main__":
     DD = fusionUnitWrapper(256, 128, 256)
-    #with open('instr.txt') as f:
-    #    command = f.read().splitlines()
-    command = ["staddr OBUF_x_0 0x10",
-               "FU_0_0:shconfig 0 0 0 0",
-               "FU_0_0:BB_0_0:mul2 0x0-6 0x0-0",
-               "FU_0_0:BB_0_1:mul2 0x0-6 0x0-2",
-               "FU_0_0:BB_0_2:mul2 0x0-6 0x0-4",
-               "FU_0_0:BB_0_3:mul2 0x0-6 0x0-6",
-               "FU_0_0:BB_1_0:mul2 0x0-4 0x0-0",
-               "FU_0_0:BB_1_1:mul2 0x0-4 0x0-2",
-               "FU_0_0:BB_1_2:mul2 0x0-4 0x0-4",
-               "FU_0_0:BB_1_3:mul2 0x0-4 0x0-6",
-               "FU_0_0:BB_2_0:mul2 0x0-2 0x0-0",
-               "FU_0_0:BB_2_1:mul2 0x0-2 0x0-2",
-               "FU_0_0:BB_2_2:mul2 0x0-2 0x0-4",
-               "FU_0_0:BB_2_3:mul2 0x0-2 0x0-6",
-               "FU_0_0:BB_3_0:mul2 0x0-0 0x0-0",
-               "FU_0_0:BB_3_1:mul2 0x0-0 0x0-2",
-               "FU_0_0:BB_3_2:mul2 0x0-0 0x0-4",
-               "FU_0_0:BB_3_3:mul2 0x0-0 0x0-6",
-               "staddr OBUF_x_1 0x0",
-               "FU_15_1:BB_1_1:mul2 0x0-4 0x0-2"]
-    DD.fuData[utils.getNameString('FU',0,0)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
-    DD.fuData[utils.getNameString('FU',0,0)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
-    DD.fuData[utils.getNameString('FU',15,1)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
-    DD.fuData[utils.getNameString('FU',15,1)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
+
+    input_image = list(np.ones((1,10,10), dtype=int).flatten() * 15)
+    kernel = list(np.ones((1,3,3), dtype=int).flatten() * 9)
+
+    for rows in range(DD.fuRows):
+        for cols in range(DD.fuCols):
+            DD.fuData[utils.getNameString('FU', rows, cols)]['fu_ibuf_obj'].store_mem(0x0, input_image)
+            DD.fuData[utils.getNameString('FU', rows, cols)]['fu_wbuf_obj'].store_mem(0x0, kernel)
+
+    with open('instr_2.txt') as f:
+        command = f.read().splitlines()
+    # command = ["staddr OBUF_x_0 0x10",
+    #            "FU_0_0:shconfig 0 0 0 0",
+    #            "FU_0_0:BB_0_0:mul2 0x0-6 0x0-0",
+    #            "FU_0_0:BB_0_1:mul2 0x0-6 0x0-2",
+    #            "FU_0_0:BB_0_2:mul2 0x0-6 0x0-4",
+    #            "FU_0_0:BB_0_3:mul2 0x0-6 0x0-6",
+    #            "FU_0_0:BB_1_0:mul2 0x0-4 0x0-0",
+    #            "FU_0_0:BB_1_1:mul2 0x0-4 0x0-2",
+    #            "FU_0_0:BB_1_2:mul2 0x0-4 0x0-4",
+    #            "FU_0_0:BB_1_3:mul2 0x0-4 0x0-6",
+    #            "FU_0_0:BB_2_0:mul2 0x0-2 0x0-0",
+    #            "FU_0_0:BB_2_1:mul2 0x0-2 0x0-2",
+    #            "FU_0_0:BB_2_2:mul2 0x0-2 0x0-4",
+    #            "FU_0_0:BB_2_3:mul2 0x0-2 0x0-6",
+    #            "FU_0_0:BB_3_0:mul2 0x0-0 0x0-0",
+    #            "FU_0_0:BB_3_1:mul2 0x0-0 0x0-2",
+    #            "FU_0_0:BB_3_2:mul2 0x0-0 0x0-4",
+    #            "FU_0_0:BB_3_3:mul2 0x0-0 0x0-6",
+    #            "staddr OBUF_x_1 0x0",
+    #            "FU_15_1:BB_1_1:mul2 0x0-4 0x0-2"]
+    # DD.fuData[utils.getNameString('FU',0,0)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
+    # DD.fuData[utils.getNameString('FU',0,0)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
+    # DD.fuData[utils.getNameString('FU',15,1)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
+    # DD.fuData[utils.getNameString('FU',15,1)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
     DD.addCommand(command)
     DD.sendCommand()
     DD.getBusyBitBricks()

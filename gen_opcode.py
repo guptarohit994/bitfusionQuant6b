@@ -42,7 +42,6 @@ class gen_op_code():
         self.init_buffers_in_mem_db(self.bitFusion_rows, self.bitFusion_cols)
 
     def init_buffers_in_mem_db(self, fu_in_rows, fu_in_cols):
-        # TODO check if capacity of buffer finished
         for r in range(fu_in_rows):
             for c in range(fu_in_cols):
                 ibuf_name = 'IBUF_'+str(r)+"_"+str(c)
@@ -437,7 +436,7 @@ class gen_op_code():
         # print("cycle_name:{}, col_name:{}, fu_name:{}, special_6_6:{}, status:{}".format(cycle_name, col_name, fu_name,special_6_6, status))
         assert status in ['free', 'top_right_used', 'top_used', 'bottom_right_used', 'used'], 'gen_opcode.py - illegal FU status found'
         shift_combination = [[0 for x in range(self.bitBrick_cols)] for y in range(self.bitBrick_rows)]
-        l1_shiftAdd_pattern = [[0, 0],[0, 0]]
+        l1_shiftAdd_pattern = [[4, 0],[8, 4]]
         if input_pair == (8, 8):
             shift_combination = [[(0, 6), (0, 4), (0, 2), (0, 0)],
                                  [(2, 6), (2, 4), (2, 2), (2, 0)],
@@ -740,7 +739,7 @@ class gen_op_code():
                         continue
                     else:
                         input_shift, weight_shift = shift_combination[i][j]
-                    command = fu_name + ":" + bb_name + ":mul2: " + hex(input_loc) + "-" + str(input_shift) + " " + hex(
+                    command = fu_name + ":" + bb_name + ":mul2 " + hex(input_loc) + "-" + str(input_shift) + " " + hex(
                         weight_loc) + "-" + str(weight_shift)
                     # command = fu_name+":BB_"+str(i)+"_"+str(j)+":mul2: "+str(inp)+"-"+str(6 - 2*i)+" "+str(weight)+"-"+str(j*2)
                     print("command:" + command)
@@ -780,7 +779,7 @@ class gen_op_code():
                     continue
                 else:
                     input_shift, weight_shift = shift_combination[i][j]
-                command = fu_name+":"+bb_name+":mul2: "+hex(input_loc)+"-"+str(input_shift)+" "+hex(weight_loc)+"-"+str(weight_shift)
+                command = fu_name+":"+bb_name+":mul2 "+hex(input_loc)+"-"+str(input_shift)+" "+hex(weight_loc)+"-"+str(weight_shift)
                 # command = fu_name+":BB_"+str(i)+"_"+str(j)+":mul2: "+str(inp)+"-"+str(6 - 2*i)+" "+str(weight)+"-"+str(j*2)
                 print("command:"+command)
 
@@ -930,9 +929,9 @@ if __name__ == "__main__":
 
     input_image = np.array(input_image, dtype=int)
 
-    input_image = np.ones(tuple(args.input_image_shape), dtype=int)
+    input_image = np.ones(tuple(args.input_image_shape), dtype=int) * 15
     # kernel = np.array([[151,152,153], [154,155,156], [157,158,159]])
-    kernel = np.ones(tuple(args.kernel_shape), dtype=int)
+    kernel = np.ones(tuple(args.kernel_shape), dtype=int) * 9
 
     padding = args.padding
 

@@ -3,12 +3,13 @@ from mem_handlers import *
 
 class memory(mem_handlers):
 
-    def __init__(self, name, size=(16*1024)):
+    def __init__(self, name, size=256, create_new=True):
         print("memory <- __init__: inputs=self:"+str(self))
         super(memory, self).__init__()
         self.mem_name = name
         self.mem_size = size
-        self.create_mem(self.mem_name, self.mem_size)
+        if create_new == True:
+            self.create_mem(self.mem_name, self.mem_size)
 
     def load_mem(self, addr, length):
         assert (addr + length) <= self.mem_size, 'load_mem access from ' + self.mem_name + 'exceeds its size'

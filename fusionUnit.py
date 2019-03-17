@@ -125,27 +125,29 @@ class fusionUnit():
                 if wbuf_byte not in wbuf_data.keys():
                     wbuf_data[wbuf_byte] = self.wBufObj.load_mem(wbuf_byte, 1)[0]
 
-                ibuf_operand = 0
-                if (ibuf_bit_start + self.bitWidth - 1) <= 8:
-                    ibuf_operand = ((ibuf_data[ibuf_byte] << ibuf_bit_start) & 0xff) >> (8 - self.bitWidth)
-                else:
-                    if (ibuf_byte + 1) not in ibuf_data.keys():
-                        ibuf_data[ibuf_byte+1] = self.iBufObj.load_mem(ibuf_byte+1, 1)[0]
+                ibuf_operand = (ibuf_data[ibuf_byte] >> ibuf_bit_start) & 0x3
+                wbuf_operand = (wbuf_data[wbuf_byte] >> wbuf_bit_start) & 0x3
+                # ibuf_operand = 0
+                # if (ibuf_bit_start + self.bitWidth - 1) <= 8:
+                #     ibuf_operand = ((ibuf_data[ibuf_byte] << ibuf_bit_start) & 0xff) >> (8 - self.bitWidth)
+                # else:
+                #     if (ibuf_byte + 1) not in ibuf_data.keys():
+                #         ibuf_data[ibuf_byte+1] = self.iBufObj.load_mem(ibuf_byte+1, 1)[0]
+                #
+                #     ibuf_operand = ((ibuf_data[ibuf_byte]  << ibuf_bit_start) & 0xff) >> ibuf_bit_start
+                #     ibuf_operand = ibuf_operand << (self.bitWidth - 8 + ibuf_bit_start)
+                #     ibuf_operand = ibuf_operand | (ibuf_data[ibuf_byte+1] >> (8 - self.bitWidth + (8 - ibuf_bit_start)))
 
-                    ibuf_operand = ((ibuf_data[ibuf_byte]  << ibuf_bit_start) & 0xff) >> ibuf_bit_start
-                    ibuf_operand = ibuf_operand << (self.bitWidth - 8 + ibuf_bit_start)
-                    ibuf_operand = ibuf_operand | (ibuf_data[ibuf_byte+1] >> (8 - self.bitWidth + (8 - ibuf_bit_start)))
-
-                wbuf_operand = 0
-                if (wbuf_bit_start + self.bitWidth - 1) <= 8:
-                    wbuf_operand = ((wbuf_data[wbuf_byte] << wbuf_bit_start) & 0xff) >> (8 - self.bitWidth)
-                else:
-                    if (wbuf_byte + 1) not in wbuf_data.keys():
-                        wbuf_data[wbuf_byte+1] = self.wBufObj.load_mem(wbuf_byte+1, 1)[0]
-
-                    wbuf_operand = ((wbuf_data[wbuf_byte]  << wbuf_bit_start) & 0xff) >> wbuf_bit_start
-                    wbuf_operand = wbuf_operand << (self.bitWidth - 8 + wbuf_bit_start)
-                    wbuf_operand = wbuf_operand | (wbuf_data[wbuf_byte+1] >> (8 - self.bitWidth + (8 - wbuf_bit_start)))
+                # wbuf_operand = 0
+                # if (wbuf_bit_start + self.bitWidth - 1) <= 8:
+                #     wbuf_operand = ((wbuf_data[wbuf_byte] << wbuf_bit_start) & 0xff) >> (8 - self.bitWidth)
+                # else:
+                #     if (wbuf_byte + 1) not in wbuf_data.keys():
+                #         wbuf_data[wbuf_byte+1] = self.wBufObj.load_mem(wbuf_byte+1, 1)[0]
+                #
+                #     wbuf_operand = ((wbuf_data[wbuf_byte]  << wbuf_bit_start) & 0xff) >> wbuf_bit_start
+                #     wbuf_operand = wbuf_operand << (self.bitWidth - 8 + wbuf_bit_start)
+                #     wbuf_operand = wbuf_operand | (wbuf_data[wbuf_byte+1] >> (8 - self.bitWidth + (8 - wbuf_bit_start)))
 
                 self.BB_list[bb_row][bb_col].addCommand(bb_op + " " + str(ibuf_operand) + " " + str(wbuf_operand))
 
@@ -184,32 +186,33 @@ class fusionUnit():
 
 if __name__=="__main__":
     wbuf_obj = memory('wbuf0',1024)
-    wbuf_obj.store_mem(0x0, [165,1,2,3,4,5,6,7])
+    wbuf_obj.store_mem(0x0, [9,1,2,3,4,5,6,7])
 
     ibuf_obj = memory('ibuf0', 1024)
-    ibuf_obj.store_mem(0x0, [231,1,1,1,1,1,1,1])
+    ibuf_obj.store_mem(0x0, [15,1,1,1,1,1,1,1])
 
     #obuf_obj = memory('obuf0', 1024)
 
     FF0 = fusionUnit('FF0', 'wbuf0', wbuf_obj, 'ibuf0', ibuf_obj, 2)
     # W = 165, I = 231, 231*165
     commands = []
-    commands.append("BB_0_0:mul2 0x0-6 0x0-0")
-    commands.append("BB_0_1:mul2 0x0-6 0x0-2")
-    commands.append("BB_0_2:mul2 0x0-6 0x0-4")
-    commands.append("BB_0_3:mul2 0x0-6 0x0-6")
-    commands.append("BB_1_0:mul2 0x0-4 0x0-0")
-    commands.append("BB_1_1:mul2 0x0-4 0x0-2")
-    commands.append("BB_1_2:mul2 0x0-4 0x0-4")
-    commands.append("BB_1_3:mul2 0x0-4 0x0-6")
-    commands.append("BB_2_0:mul2 0x0-2 0x0-0")
-    commands.append("BB_2_1:mul2 0x0-2 0x0-2")
-    commands.append("BB_2_2:mul2 0x0-2 0x0-4")
-    commands.append("BB_2_3:mul2 0x0-2 0x0-6")
-    commands.append("BB_3_0:mul2 0x0-0 0x0-0")
-    commands.append("BB_3_1:mul2 0x0-0 0x0-2")
-    commands.append("BB_3_2:mul2 0x0-0 0x0-4")
-    commands.append("BB_3_3:mul2 0x0-0 0x0-6")
+    commands.append("BB_0_0:mul2 0x0-0 0x0-6")
+    commands.append("BB_0_1:mul2 0x0-0 0x0-4")
+    commands.append("BB_0_2:mul2 0x0-0 0x0-2")
+    commands.append("BB_0_3:mul2 0x0-0 0x0-0")
+    commands.append("BB_1_0:mul2 0x0-2 0x0-6")
+    commands.append("BB_1_1:mul2 0x0-2 0x0-4")
+    commands.append("BB_1_2:mul2 0x0-2 0x0-2")
+    commands.append("BB_1_3:mul2 0x0-2 0x0-0")
+    commands.append("BB_2_0:mul2 0x0-4 0x0-6")
+    commands.append("BB_2_1:mul2 0x0-4 0x0-4")
+    commands.append("BB_2_2:mul2 0x0-4 0x0-2")
+    commands.append("BB_2_3:mul2 0x0-4 0x0-0")
+    commands.append("BB_3_0:mul2 0x0-6 0x0-6")
+    commands.append("BB_3_1:mul2 0x0-6 0x0-4")
+    commands.append("BB_3_2:mul2 0x0-6 0x0-2")
+    commands.append("BB_3_3:mul2 0x0-6 0x0-0")
+                    
     commands.append("BB_0_0:mul2 0x0-6 0x0-0")
     commands.append("BB_0_1:mul2 0x0-6 0x0-2")
     commands.append("BB_0_2:mul2 0x0-6 0x0-4")
