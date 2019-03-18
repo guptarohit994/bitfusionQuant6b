@@ -78,20 +78,21 @@ total fusionUnits used across all cycles:48/64 = 75.0%
 ```
 
 2. `python reconstruct_matrix.py | tail -5`
+    The output instructions are generated into dir `cycle_instr_dir/` and this script picks it up automatically.
    
    **Input Image**
 ```
 input_image_shape:(1, 5, 5)
-[[[15 15 15 15 15]
-  [15 15 15 15 15]
-  [15 15 15 15 15]
-  [15 15 15 15 15]
-  [15 15 15 15 15]]]
+[[[255 255 255 255 255]
+  [255 255 255 255 255]
+  [255 255 255 255 255]
+  [255 255 255 255 255]
+  [255 255 255 255 255]]]
 ```
   **Kernel**
 ```
-[[[9 9]
-  [9 9]]]
+[[[63 63]
+  [63 63]]]
 ```
   **Output convolution**
 ```
@@ -100,3 +101,6 @@ input_image_shape:(1, 5, 5)
  [7812 7812 7812 7812]
  [7812 7812 7812 7812]]
 ```
+
+  **Back of the envelope calculations**
+  Input image and Kernel are 8b as shown above and we are doing 6b x 6b quantization, therefore, each input pixel becomes 63 and kernel pixel becomes 31. So, `63 * 31 * 4 = 7812`
