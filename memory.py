@@ -15,8 +15,8 @@ class memory(mem_handlers):
         assert (addr + length) <= self.mem_size, 'load_mem access from ' + self.mem_name + 'exceeds its size'
         data = self.read_mem(self.mem_name, addr, length)
         # returns list type
-        print("memory.py <- load_mem for "+self.mem_name+" : inputs=addr:"+str(addr)+\
-              ", length:"+str(length)+", data:"+str(data))
+        print("memory.py <- load_mem for {}: inputs=addr:{}, length:{}, data:{}".\
+              format(self.mem_name,hex(addr),length,data))
         return data
 
     def store_mem(self, addr, data):

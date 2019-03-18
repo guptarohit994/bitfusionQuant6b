@@ -43,3 +43,6 @@ def align_num_to_byte(data):
     temp_data = temp_data >> 8
     assert temp_data == 0, 'utils.py - align_num_to_byte - data greater than 24 bits'
     return data_byte_array
+
+def twos_complement(n, bits=8):
+    return (1 << bits) - n

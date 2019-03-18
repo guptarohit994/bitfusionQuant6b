@@ -29,10 +29,14 @@ class mem_handlers():
         while access_byte_cnt < (size+1):
             temp = buf_fd.read(1)
 
+            val_read = int.from_bytes(temp, byteorder='little')
+            # if val_read < 0:
+            #     val_read = utils.twos_complement(abs(val_read))
+
             #temp = bytearray(temp, 'utf-8')
-            data.append(int.from_bytes(temp, byteorder='little'))
+            data.append(val_read)
             access_byte_cnt += 1
-        data = np.array(data, dtype=np.int8)
+        data = np.array(data, dtype=np.int16)
         #utils.cprint("mem_handlers", "read_mem", str(data))
         buf_fd.close()
         return data.tolist()
@@ -52,6 +56,7 @@ if __name__ == '__main__':
     mh = mem_handlers()
     mh.create_mem("rohit",0x8000)
     mh.write_mem("rohit", 0x400, [231, 11,12,13,14,15,16])
-    mh.read_mem("rohit", 8, 32)
-    mh.read_mem("rohit", 0x400, 16)
+    #mh.read_mem("rohit", 8, 32)
+    x = mh.read_mem("rohit", 0x400, 16)
+    print(x)
     os.remove(mh.mem_dir+"rohit")

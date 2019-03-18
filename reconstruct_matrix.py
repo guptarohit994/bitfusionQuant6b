@@ -50,38 +50,47 @@ def entire_sim_data_parser(filename):
 
 
 if __name__ == "__main__":
-    in_file_name = 'entire_sim_data.txt'
-    if os.path.isfile(in_file_name):
-        entire_sim_data_parser(in_file_name)
+    # in_file_name = 'entire_sim_data.txt'
+    # if os.path.isfile(in_file_name):
+    #     entire_sim_data_parser(in_file_name)
 
-    # obuf_data = {}
-    # total_windows = 4
-    # kernel_size = 4
-    # bitfusion_cols = 16
-    # bitfusion_row = 16
-    # obuf_size = 256
-    # total_cycles = 1
-    #
-    # for buf_num in range(bitfusion_cols):
-    #     obuf_data['OBUF_x_'+str(buf_num)] = {}
-    #     obuf_data['OBUF_x_'+str(buf_num)]['mem_obj'] = memory('OBUF_x_'+str(buf_num), obuf_size, False)
-    #
-    # cycle = 1
-    # window_output = []
-    #
-    # for win in range(total_windows):
-    #     if win == total_windows - 1:
-    #         cycle += 1
-    #     buf_num_to_access = win % 16
-    #     addr_to_load = 0x0 + (4*cycle)
-    #     buf_name = 'OBUF_x_'+str(buf_num_to_access)
-    #
-    #     # data will be a list
-    #     data = obuf_data[buf_name]['mem_obj'].load_mem(addr_to_load, 4)
-    #     accumulated_num = 0
-    #
-    #     for x in range(4):
-    #         accumulated_num += data[x] << (x*8)
-    #
-    #     window_output[win] = accumulated_num
+    obuf_data = {}
+    total_windows = 16
+    kernel_size = 4
+    bitfusion_cols = 4
+    bitfusion_row = 4
+    obuf_size = 256
+    total_cycles = 4
+    padding = 0
+    input_shape = (5,5)
+    kernel_shape = (2,2)
+
+    calculated_output_shape = ((input_shape[0] + 2*padding - kernel_shape[0] + 1), (2*padding - kernel_shape[1] + 1))
+
+    for buf_num in range(bitfusion_cols):
+        obuf_data['OBUF_x_'+str(buf_num)] = {}
+        obuf_data['OBUF_x_'+str(buf_num)]['mem_obj'] = memory('OBUF_x_'+str(buf_num), obuf_size, False)
+
+    cycle = 1
+    window_outputs = []
+    # window_output = [[0 for x in range(input_shape[0] + 2*padding - kernel_shape[0] + 1)]
+    #                  for y in range(input_shape[1] + 2*padding - kernel_shape[1] + 1)]
+
+    for win in range(total_windows):
+        if win == bitfusion_cols - 1:
+            cycle += 1
+        buf_num_to_access = win % bitfusion_cols
+        addr_to_load = 0x0 + (4*cycle)
+        buf_name = 'OBUF_x_'+str(buf_num_to_access)
+
+        # data will be a list
+        data = obuf_data[buf_name]['mem_obj'].load_mem(addr_to_load, 4)
+        accumulated_num = 0
+
+        for x in range(4):
+            accumulated_num += data[x] << (x*8)
+
+        window_outputs.append(accumulated_num)
+
+    print(np.array(window_outputs).reshape(calculated_output_shape))
 
