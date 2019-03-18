@@ -19,6 +19,7 @@ class fusionUnitWrapper():
         self.ibufSize = ibuf_size
         self.wbufSize = wbuf_size
         # which addr to store the output of level2 add in obuf
+        # making it a list of lists with each list representing 1 cycle
         self.obuf_write_addr = []
         self.commands = []
         # stores objs of fu in a column
@@ -66,7 +67,7 @@ class fusionUnitWrapper():
             return [command_type]
         elif "staddr OBUF_x_" in command:
             command_type = 'staddr'
-            pattern = re.compile('^staddr OBUF_x_(\d+) 0x(\d+)$')
+            pattern = re.compile('^staddr OBUF_x_(\d+) 0x(.*)$')
             matches = pattern.match(command)
             assert matches, 'fusionUnitWrapper - malformed stdaddr OBUF_x_ command received'
 
@@ -153,18 +154,34 @@ class fusionUnitWrapper():
                 self.fuData[utils.getNameString('FU',i,j)]['fu_obj'].getBusyBitBricks()
 
 if __name__ == "__main__":
-    DD = fusionUnitWrapper(256, 128, 256)
+    DD = fusionUnitWrapper(256, 128, 1024)
 
-    input_image = list(np.ones((1,10,10), dtype=int).flatten() * 15)
-    kernel = list(np.ones((1,3,3), dtype=int).flatten() * 9)
+    input_quantization = 6
+    weight_quantization =  6
+
+    input_image = list(np.ones((1,5,5), dtype=int).flatten() * ((255 & 0xff) >> (8 - input_quantization)))
+    kernel = list(np.ones((1,2,2), dtype=int).flatten() * ((127 & 0xff) >> (8 - weight_quantization)))
 
     for rows in range(DD.fuRows):
         for cols in range(DD.fuCols):
             DD.fuData[utils.getNameString('FU', rows, cols)]['fu_ibuf_obj'].store_mem(0x0, input_image)
             DD.fuData[utils.getNameString('FU', rows, cols)]['fu_wbuf_obj'].store_mem(0x0, kernel)
 
-    with open('instr_2.txt') as f:
-        command = f.read().splitlines()
+    instr_file_pattern = re.compile('^instr_cycle(\d+).txt')
+
+    count = 1
+    while os.path.exists("./cycle_instr_dir/"+'instr_cycle'+str(count)+".txt"):
+        print("FUSIONUNITWRAPPER: EXECUTING INSTRUCTIONS FOR CYCLE:"+str(count))
+        with open("./cycle_instr_dir/"+'instr_cycle'+str(count)+".txt") as f:
+            count += 1
+            command = f.read().splitlines()
+            DD.addCommand(command)
+            DD.sendCommand()
+            DD.getBusyBitBricks()
+            DD.execCommand()
+
+    # with open('instr_2.txt') as f:
+    #     command = f.read().splitlines()
     # command = ["staddr OBUF_x_0 0x10",
     #            "FU_0_0:shconfig 0 0 0 0",
     #            "FU_0_0:BB_0_0:mul2 0x0-6 0x0-0",
@@ -189,10 +206,10 @@ if __name__ == "__main__":
     # DD.fuData[utils.getNameString('FU',0,0)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
     # DD.fuData[utils.getNameString('FU',15,1)]['fu_ibuf_obj'].store_mem(0x0, [231,1,1,1,1,1,1,1])
     # DD.fuData[utils.getNameString('FU',15,1)]['fu_wbuf_obj'].store_mem(0x0, [165,1,2,3,4,5,6,7])
-    DD.addCommand(command)
-    DD.sendCommand()
-    DD.getBusyBitBricks()
-    DD.execCommand()
+    # DD.addCommand(command)
+    # DD.sendCommand()
+    # DD.getBusyBitBricks()
+    # DD.execCommand()
 
 
 
