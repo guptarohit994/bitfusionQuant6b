@@ -1,1 +1,0 @@
-latency_bitBrick = 2.0
