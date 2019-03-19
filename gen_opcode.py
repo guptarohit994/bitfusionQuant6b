@@ -930,8 +930,9 @@ if __name__ == "__main__":
     input_image = np.array(input_image, dtype=int)
 
     input_image = np.ones(tuple(args.input_image_shape), dtype=int) * 15
+
     # kernel = np.array([[151,152,153], [154,155,156], [157,158,159]])
-    kernel = np.ones(tuple(args.kernel_shape), dtype=int) * 9
+    kernel = np.ones(tuple(args.kernel_shape), dtype=int) * 15
 
     padding = args.padding
 

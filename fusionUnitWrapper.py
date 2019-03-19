@@ -8,8 +8,8 @@ from pprint import pprint
 class fusionUnitWrapper():
     def __init__(self, ibuf_size, wbuf_size, obuf_size):
         # TODO decide how many fusion unit should be there in a row
-        self.fuRows = 4
-        self.fuCols = 4
+        self.fuRows = 16
+        self.fuCols = 16
 
         self.fuData = {}
         # stores obj of obuf of a column

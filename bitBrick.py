@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 # import array
 import numpy as np
-import constants as constants
 from bitBrickCommands import *
 
 class bitBrick():
@@ -11,7 +10,6 @@ class bitBrick():
         self.name = name
         self.fuName = fu_name
         self.status = "free"
-        self.latency = constants.latency_bitBrick
         self.commands = []
         self.outputs = []
 

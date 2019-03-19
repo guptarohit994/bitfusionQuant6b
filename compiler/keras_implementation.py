@@ -3,8 +3,10 @@
 import keras
 import numpy as np
 
-inputPixelResolution = 4
-weightResolution = 4
+inputPixelResolution = 8
+weightResolution = 8
+
+obuf_size = 256
 
 # (x_train, _), (x_test, _) = keras.datasets.mnist.load_data()
 model = keras.Sequential()
