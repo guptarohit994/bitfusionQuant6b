@@ -1,5 +1,5 @@
 # CSE240D Final Project
-# Dynamic deep bitwidth quantization of Neural Networks
+# Bitfusion architecture with support for 6 bit quantization
 
 ## Introduction
 
