@@ -12,7 +12,6 @@ This repository contains three main components -
 
 This is contained in ```compiler/keras_implementation.py```. Le-Net 5 has 8 layers and we simulate the first convolution layer. ```sdfsdfdsf.py``` extracts the parameters of that convolution layer and passes it to the compiler.
 
-`./dasdasd.py`
 
 ## Compiler
 
